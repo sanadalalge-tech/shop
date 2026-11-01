@@ -15,16 +15,16 @@
   const TRANSITIONS = { new: ['confirmed', 'shipped', 'cancelled'], confirmed: ['shipped', 'cancelled'], shipped: ['delivered', 'rejected'], delivered: ['returned'] };
   const EXP_CATS = { sponsored: 'إعلانات ممولة', influencer: 'مشاهير ومؤثرون', ads_other: 'إعلانات أخرى', delivery: 'تكلفة التوصيل', delivery_loss: 'خسارة توصيل مرفوض', salary: 'رواتب وعمولات', rent: 'إيجار وخدمات', other: 'أخرى' };
   const AD_CATS = ['sponsored', 'influencer', 'ads_other'];
-  const MAT_CATS = { alcohol: 'كحول', oil: 'زيوت عطرية', glass: 'زجاج', box: 'بوكس', sticker: 'ستيكر', other: 'أخرى' };
+  const MAT_CATS = { alcohol: 'كحول', oil: 'زيوت عطرية', glass: 'زجاج', box: 'بوكس', sticker: 'ستيكر', bag: 'أكياس', other: 'أخرى' };
   const UNITS = { ml: 'مل', g: 'جرام', pcs: 'قطعة' };
   const MASTER = ['user_upsert', 'settings_set', 'material_upsert', 'product_upsert'];
-  const OP_TYPES = ['user_upsert', 'settings_set', 'material_upsert', 'product_upsert', 'purchase', 'production', 'order_create', 'order_status', 'payment', 'expense', 'adjust', 'void'];
+  const OP_TYPES = ['user_upsert', 'settings_set', 'material_upsert', 'product_upsert', 'purchase', 'production', 'order_create', 'order_status', 'order_edit', 'payment', 'expense', 'adjust', 'void'];
 
   const PERMS = {
     owner: null,
     manager: OP_TYPES.filter(t => t !== 'user_upsert' && t !== 'settings_set'),
-    sales: ['order_create', 'order_status', 'payment'],
-    warehouse: ['purchase', 'production', 'adjust', 'material_upsert', 'order_status']
+    sales: ['order_create', 'order_status', 'order_edit', 'payment'],
+    warehouse: ['purchase', 'production', 'adjust', 'material_upsert', 'order_status', 'order_edit']
   };
   const STATUS_BY_ROLE = { sales: ['confirmed', 'cancelled', 'delivered', 'rejected'], warehouse: ['shipped', 'returned'] };
 
@@ -67,6 +67,7 @@
   function sum(arr, f) { let t = 0; for (const x of arr) t += f(x); return t; }
   const cmp = (a, b) => (a.ts - b.ts) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+  /*@client-start*/
   // SHA-256 نقي (لا يحتاج سياقًا آمنًا) لتجزئة الرمز السري
   function sha256(str) {
     const bytes = [];
@@ -106,6 +107,8 @@
   }
   function hashPin(pin, salt) { return sha256(salt + ':' + pin); }
 
+  /*@client-end*/
+
   // ---------- الحالة ----------
   function emptyState() {
     return { settings: { rate: 0, brand: '' }, users: {}, materials: {}, products: {}, orders: {}, expenses: [], adjustments: [], payments: [], movements: [], alerts: [], opsCount: 0 };
@@ -144,7 +147,7 @@
       }
       case 'product_upsert': {
         const pr = S.products[p.id] || { stock: 0, value: 0 };
-        S.products[p.id] = Object.assign(pr, { id: p.id, name: p.name, sizeMl: p.sizeMl || 0, price: p.price, recipe: p.recipe || [], active: p.active !== false });
+        S.products[p.id] = Object.assign(pr, { id: p.id, name: p.name, sizeMl: p.sizeMl || 0, price: p.price, recipe: p.recipe || [], oil: p.oil || null, active: p.active !== false });
         break;
       }
       case 'purchase': {
@@ -174,7 +177,7 @@
       }
       case 'order_create': {
         const items = p.items.map(i => ({ productId: i.productId, qty: i.qty, price: i.price, name: (S.products[i.productId] || {}).name || '؟', cogs: 0 }));
-        S.orders[p.id] = { id: p.id, code: p.code, date: d, ts: op.ts, by: op.by, customer: p.customer, items, discount: p.discount || 0, deliveryFee: p.deliveryFee || 0, courierCost: p.courierCost || 0, channel: p.channel || '', payMethod: p.payMethod || 'cod', note: p.note || '', status: 'new', history: [{ status: 'new', date: d, by: op.by }], paid: 0, cogs: 0 };
+        S.orders[p.id] = { id: p.id, code: p.code, date: d, ts: op.ts, by: op.by, customer: p.customer, items, discount: p.discount || 0, deliveryFee: p.deliveryFee || 0, courierCost: p.courierCost || 0, courierCode: p.courierCode || '', channel: p.channel || '', payMethod: p.payMethod || 'cod', note: p.note || '', status: 'new', history: [{ status: 'new', date: d, by: op.by }], paid: 0, cogs: 0 };
         break;
       }
       case 'order_status': {
@@ -212,6 +215,12 @@
         o.history.push({ status: p.status, date: d, by: op.by, note: p.note || '' });
         break;
       }
+      case 'order_edit': {
+        const o = S.orders[p.orderId];
+        if (!o) return add('err', 'تعديل لطلب غير موجود');
+        if (typeof p.courierCode === 'string') o.courierCode = p.courierCode;
+        break;
+      }
       case 'payment': {
         const o = S.orders[p.orderId];
         if (!o) return add('err', 'دفعة لطلب غير موجود');
@@ -228,6 +237,12 @@
         const it = isMat ? S.materials[p.id] : S.products[p.id];
         if (!it) return add('err', 'تسوية لصنف غير موجود');
         const k = isMat ? 'qty' : 'stock';
+        if (p.opening && !isMat && p.delta > 0) {
+          const v0 = Math.round((p.unitCost || 0) * p.delta);
+          put(it, k, p.delta, v0);
+          S.movements.push({ ts: op.ts, date: d, kind: 'opening', type: 'product', id: it.id, name: it.name, qty: p.delta, value: v0, note: p.reason || 'رصيد افتتاحي' });
+          break;
+        }
         let val;
         if (p.delta < 0) val = -take(it, k, -p.delta);
         else { const avg = it[k] > 0 ? it.value / it[k] : 0; val = Math.round(avg * p.delta); put(it, k, p.delta, val); }
@@ -263,6 +278,7 @@
     return S;
   }
 
+  /*@client-start*/
   // التعبئة تحفظ نسخة من التركيبة وقت التنفيذ كي لا تتغير التكلفة التاريخية إذا عُدِّلت التركيبة لاحقًا
   function productionPayload(S, productId, units, note) {
     const pr = S.products[productId];
@@ -281,8 +297,7 @@
       case 'product_upsert':
         if (!p.name) return 'اسم المنتج مطلوب';
         if (!(p.price >= 0)) return 'السعر غير صحيح';
-        if (!p.recipe || !p.recipe.length) return 'أضف مكونات التركيبة (كحول، زيت، زجاجة...)';
-        for (const l of p.recipe) { if (!S.materials[l.materialId]) return 'مادة غير موجودة في التركيبة'; if (!(l.qty > 0)) return 'كمية مكوّن غير صحيحة'; }
+        for (const l of (p.recipe || [])) { if (!S.materials[l.materialId]) return 'مادة غير موجودة في التركيبة'; if (!(l.qty > 0)) return 'كمية مكوّن غير صحيحة'; }
         return null;
       case 'purchase':
         if (!S.materials[p.materialId]) return 'اختر المادة';
@@ -317,6 +332,9 @@
         if (p.status === 'shipped') for (const it of o.items) { const pr = S.products[it.productId]; if (!pr || pr.stock < it.qty) return 'مخزون «' + (pr ? pr.name : '؟') + '» لا يكفي: المتاح ' + (pr ? pr.stock : 0) + ' والمطلوب ' + it.qty; }
         return null;
       }
+      case 'order_edit':
+        if (!S.orders[p.orderId]) return 'الطلب غير موجود';
+        return typeof p.courierCode === 'string' && p.courierCode.length > 60 ? 'كود التوصيل طويل جدًا' : null;
       case 'payment': {
         const o = S.orders[p.orderId];
         if (!o) return 'الطلب غير موجود';
@@ -331,6 +349,11 @@
         const isMat = p.target === 'material';
         const it = isMat ? S.materials[p.id] : S.products[p.id];
         if (!it) return 'اختر الصنف';
+        if (p.opening) {
+          if (isMat) return 'الرصيد الافتتاحي للمنتجات فقط';
+          if (!Number.isInteger(p.delta) || p.delta <= 0) return 'أدخل عددًا صحيحًا موجبًا';
+          return Number.isFinite(p.unitCost) && p.unitCost >= 0 ? null : 'تكلفة الزجاجة غير صحيحة';
+        }
         if (!p.reason || !p.reason.trim()) return 'سبب التسوية مطلوب';
         if (!Number.isFinite(p.delta) || p.delta === 0) return 'الفرق يجب ألا يكون صفرًا';
         if (!isMat && !Number.isInteger(p.delta)) return 'عدد المنتجات يجب أن يكون صحيحًا';
@@ -340,6 +363,8 @@
     }
     return 'نوع عملية غير معروف';
   }
+
+  /*@client-end*/
 
   // ---------- التقارير ----------
   function report(S, from, to) {
@@ -354,7 +379,7 @@
     const byCat = {};
     for (const e of exps) byCat[e.cat] = (byCat[e.cat] || 0) + e.lyd;
     const expTotal = sum(exps, e => e.lyd);
-    const shrink = -sum(S.adjustments.filter(a => inR(a.date)), a => a.value);
+    const shrink = 0 - sum(S.adjustments.filter(a => inR(a.date)), a => a.value);
     const adSpend = sum(AD_CATS, c => byCat[c] || 0);
     const gross = revenue - cogs;
     const byProduct = {};
@@ -386,8 +411,8 @@
     const orders = Object.values(S.orders).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.ts - a.ts));
     const users = S.users;
     return {
-      'الطلبات': [['الرقم', 'التاريخ', 'العميل', 'الهاتف', 'المدينة', 'العنوان', 'الحالة', 'المنتجات', 'الإجمالي د.ل', 'المدفوع', 'المتبقي', 'التكلفة', 'الربح', 'القناة', 'الموظف']].concat(
-        orders.map(o => [o.code, o.date, o.customer.name, o.customer.phone, o.customer.city, o.customer.address || '', STATUS[o.status], o.items.map(i => i.name + '×' + i.qty).join(' + '), n(o.total), n(o.paid), n(o.total - o.paid), n(o.cogs), o.status === 'delivered' ? n(o.total - o.cogs) : '', o.channel, (users[o.by] || {}).name || ''])),
+      'الطلبات': [['الرقم', 'كود التوصيل', 'التاريخ', 'العميل', 'الهاتف', 'المدينة', 'العنوان', 'الحالة', 'المنتجات', 'الإجمالي د.ل', 'المدفوع', 'المتبقي', 'التكلفة', 'الربح', 'القناة', 'الموظف']].concat(
+        orders.map(o => [o.code, o.courierCode || '', o.date, o.customer.name, o.customer.phone, o.customer.city, o.customer.address || '', STATUS[o.status], o.items.map(i => i.name + '×' + i.qty).join(' + '), n(o.total), n(o.paid), n(o.total - o.paid), n(o.cogs), o.status === 'delivered' ? n(o.total - o.cogs) : '', o.channel, (users[o.by] || {}).name || ''])),
       'المواد الخام': [['المادة', 'التصنيف', 'الوحدة', 'الرصيد', 'متوسط تكلفة الوحدة د.ل', 'القيمة د.ل', 'حد التنبيه']].concat(
         Object.values(S.materials).map(m => [m.name, MAT_CATS[m.cat], UNITS[m.unit], n(m.qty), m.qty > 0 ? m.value / m.qty : 0, n(m.value), n(m.min)])),
       'المنتجات': [['المنتج', 'الحجم مل', 'السعر د.ل', 'تكلفة التركيبة الحالية', 'المخزون', 'قيمة المخزون']].concat(
@@ -395,7 +420,7 @@
       'المصروفات': [['التاريخ', 'النوع', 'المبلغ د.ل', 'ملاحظة']].concat(
         S.expenses.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map(e => [e.date, EXP_CATS[e.cat], n(e.lyd), e.note || ''])),
       'حركة المخزون': [['التاريخ', 'الحركة', 'الصنف', 'الكمية', 'القيمة د.ل', 'ملاحظة']].concat(
-        S.movements.slice().sort((a, b) => b.ts - a.ts).map(m => [m.date, { purchase: 'شراء', consume: 'استهلاك تعبئة', produce: 'إنتاج', ship: 'شحن', restock: 'إعادة للمخزون', adjust: 'تسوية' }[m.kind], m.name, m.type === 'material' ? n(m.qty) : m.qty, n(m.value), m.note || ''])),
+        S.movements.slice().sort((a, b) => b.ts - a.ts).map(m => [m.date, { purchase: 'شراء', consume: 'استهلاك تعبئة', produce: 'إنتاج', ship: 'شحن', restock: 'إعادة للمخزون', adjust: 'تسوية', opening: 'رصيد افتتاحي' }[m.kind], m.name, m.type === 'material' ? n(m.qty) : m.qty, n(m.value), m.note || ''])),
       'الملخص': (function () {
         const r = report(S, '', ''), usd = v => (rate ? n(toUsd(v, rate)) : '');
         return [['البند', 'د.ل', 'دولار'], ['الإيراد (طلبات مستلمة)', n(r.revenue), usd(r.revenue)], ['تكلفة البضاعة', n(r.cogs), usd(r.cogs)], ['مجمل الربح', n(r.gross), usd(r.gross)], ['المصروفات', n(r.expTotal), usd(r.expTotal)], ['فاقد وتسويات', n(r.shrink), usd(r.shrink)], ['صافي الربح', n(r.net), usd(r.net)], ['منها إنفاق إعلاني', n(r.adSpend), usd(r.adSpend)], ['ذمم لم تُحصَّل', n(r.receivables), usd(r.receivables)], ['قيمة المواد الخام', n(r.matValue), usd(r.matValue)], ['قيمة المنتجات الجاهزة', n(r.fgValue), usd(r.fgValue)]];

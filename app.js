@@ -226,14 +226,14 @@ function ordersList() {
   if (role() === 'sales') list = list.filter(o => o.by === USER.id || o.status === 'new');
   if (ui.ostatus !== 'all') list = list.filter(o => o.status === ui.ostatus);
   const q = C.normDigits(ui.q || '').toLowerCase();
-  if (q) list = list.filter(o => (o.code + ' ' + o.customer.name + ' ' + o.customer.phone + ' ' + o.customer.city).toLowerCase().includes(q));
+  if (q) list = list.filter(o => (o.code + ' ' + (o.courierCode || '') + ' ' + o.customer.name + ' ' + o.customer.phone + ' ' + o.customer.city).toLowerCase().includes(q));
   if (!list.length) return '<div class="empty">لا توجد طلبات</div>';
-  return list.slice(0, 150).map(o => '<div class="card" data-a="order" data-id="' + o.id + '" style="cursor:pointer"><div class="row spread"><b>' + esc(o.code) + ' · ' + esc(o.customer.name) + '</b>' + stBadge(o.status) + '</div><div class="row spread"><small class="d">' + esc(o.customer.city) + ' · ' + o.date + ' · ' + o.items.map(i => esc(i.name) + '×' + i.qty).join('، ') + '</small><b>' + lyd(o.total) + '</b></div></div>').join('');
+  return list.slice(0, 150).map(o => '<div class="card" data-a="order" data-id="' + o.id + '" style="cursor:pointer"><div class="row spread"><b>' + esc(o.code) + ' · ' + esc(o.customer.name) + '</b>' + (o.courierCode ? '<small class="d" dir="ltr">' + esc(o.courierCode) + '</small>' : '') + stBadge(o.status) + '</div><div class="row spread"><small class="d">' + esc(o.customer.city) + ' · ' + o.date + ' · ' + o.items.map(i => esc(i.name) + '×' + i.qty).join('، ') + '</small><b>' + lyd(o.total) + '</b></div></div>').join('');
 }
 function pgOrders() {
   const cnt = {}; Object.values(S.orders).forEach(o => { cnt[o.status] = (cnt[o.status] || 0) + 1; });
   return '<div class="row spread"><h2>الطلبات</h2>' + (C.can(role(), 'order_create') ? '<button class="btn pri" data-a="newOrder">+ طلب جديد</button>' : '') + '</div>' +
-    '<input id="oq" placeholder="بحث بالاسم أو الهاتف أو الرقم" value="' + esc(ui.q) + '"><div class="chips" style="margin-top:8px"><button class="chip ' + (ui.ostatus === 'all' ? 'on' : '') + '" data-a="ostatus" data-id="all">الكل</button>' +
+    '<input id="oq" placeholder="بحث بالاسم أو الهاتف أو كود التوصيل" value="' + esc(ui.q) + '"><div class="chips" style="margin-top:8px"><button class="chip ' + (ui.ostatus === 'all' ? 'on' : '') + '" data-a="ostatus" data-id="all">الكل</button>' +
     Object.keys(C.STATUS).map(s => '<button class="chip ' + (ui.ostatus === s ? 'on' : '') + '" data-a="ostatus" data-id="' + s + '">' + C.STATUS[s] + (cnt[s] ? ' ' + cnt[s] : '') + '</button>').join('') + '</div><div id="olist">' + ordersList() + '</div>';
 }
 function bindOrders() { const q = $('#oq'); if (q) q.oninput = () => { ui.q = q.value; $('#olist').innerHTML = ordersList(); }; }
@@ -253,7 +253,7 @@ function calcOrderForm() {
 function newOrder() {
   if (!Object.keys(S.products).length) return toast('أضف منتجًا أولًا من المخزون', 1);
   modal('طلب جديد', '<div class="g2"><label>اسم العميل<input name="name"></label><label>الهاتف<input name="phone" inputmode="tel" dir="ltr"></label></div><div class="g2"><label>المدينة<input name="city" list="cities"></label><label>القناة<select name="channel">' + CHANNELS.map(c => '<option>' + c + '</option>').join('') + '</select></label></div><datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist><label>العنوان / أقرب نقطة دالة<input name="address"></label>' +
-    '<div id="lines">' + lineHtml() + '</div><button type="button" class="btn sm" data-a="addLine">+ منتج آخر</button><div class="g3" style="margin-top:10px"><label>خصم<input name="discount" inputmode="decimal" value="0"></label><label>رسوم توصيل على العميل<input name="deliveryFee" inputmode="decimal" value="0"></label><label>تكلفة المندوب علينا<input name="courierCost" inputmode="decimal" value="0"></label></div><label>ملاحظة<input name="note"></label><div class="sum big"><span>الإجمالي</span><span id="otot">—</span></div>', f => {
+    '<div id="lines">' + lineHtml() + '</div><button type="button" class="btn sm" data-a="addLine">+ منتج آخر</button><div class="g3" style="margin-top:10px"><label>خصم<input name="discount" inputmode="decimal" value="0"></label><label>رسوم توصيل على العميل<input name="deliveryFee" inputmode="decimal" value="0"></label><label>تكلفة المندوب علينا<input name="courierCost" inputmode="decimal" value="0"></label></div><label>كود شركة التوصيل (اختياري، يمكن إضافته لاحقًا)<input name="ccode" dir="ltr"></label><label>ملاحظة<input name="note"></label><div class="sum big"><span>الإجمالي</span><span id="otot">—</span></div>', f => {
       const v = fd(f), items = [];
       for (const l of $$('.line', f)) {
         const pid = $('[name=pid]', l).value; if (!pid) continue;
@@ -263,7 +263,7 @@ function newOrder() {
       const d = fnum(v.discount, 0), df = fnum(v.deliveryFee, 0), cc = fnum(v.courierCost, 0);
       if ([d, df, cc].some(x => !Number.isFinite(x) || x < 0)) { toast('تحقق من الخصم والرسوم', 1); return false; }
       const code = today().slice(5).replace('-', '') + '-' + C.uid().slice(0, 4).toUpperCase();
-      return !!commit('order_create', { id: C.uid(), code, customer: { name: v.name.trim(), phone: C.normDigits(v.phone), city: v.city.trim(), address: v.address.trim() }, items, discount: d, deliveryFee: df, courierCost: cc, channel: v.channel, note: v.note.trim() }) && undefined;
+      return !!commit('order_create', { id: C.uid(), code, customer: { name: v.name.trim(), phone: C.normDigits(v.phone), city: v.city.trim(), address: v.address.trim() }, items, discount: d, deliveryFee: df, courierCost: cc, courierCode: v.ccode.trim(), channel: v.channel, note: v.note.trim() }) && undefined;
     }, 'حفظ الطلب');
   $('#mf').addEventListener('input', calcOrderForm);
   $('#mf').addEventListener('change', e => { if (e.target.name === 'pid') { const o = e.target.selectedOptions[0], l = e.target.closest('.line'); if (o && o.dataset.price) $('[name=price]', l).value = o.dataset.price; } calcOrderForm(); });
@@ -274,6 +274,7 @@ function orderDetail(id) {
   const m = $('#modal');
   m.innerHTML = '<div class="sheet"><div class="row spread"><h2>' + esc(o.code) + '</h2>' + stBadge(o.status) + '</div>' +
     '<div class="card"><b>' + esc(o.customer.name) + '</b> · <a href="tel:' + esc(o.customer.phone) + '" dir="ltr">' + esc(o.customer.phone) + '</a><small class="d">' + esc(o.customer.city) + ' — ' + esc(o.customer.address || '') + '<br>' + o.date + ' · ' + esc(o.channel) + ' · ' + esc((S.users[o.by] || {}).name || '') + (o.note ? '<br>' + esc(o.note) : '') + '</small></div>' +
+    '<div class="row spread card"><span>كود شركة التوصيل: <b dir="ltr">' + (o.courierCode ? esc(o.courierCode) : '—') + '</b></span>' + (C.can(role(), 'order_edit') ? '<button class="btn sm" data-a="ccode" data-id="' + o.id + '">' + (o.courierCode ? 'تعديل' : 'إضافة') + '</button>' : '') + '</div>' +
     '<div class="tw"><table>' + o.items.map(i => '<tr><td>' + esc(i.name) + '</td><td class="n">' + i.qty + ' × ' + num(i.price) + '</td><td class="n">' + num(i.qty * i.price) + '</td></tr>').join('') + '</table></div>' +
     '<div class="sum"><span>المنتجات</span><span>' + lyd(o.itemsTotal) + '</span></div>' + (o.discount ? '<div class="sum"><span>خصم</span><span>- ' + lyd(o.discount) + '</span></div>' : '') + (o.deliveryFee ? '<div class="sum"><span>توصيل</span><span>' + lyd(o.deliveryFee) + '</span></div>' : '') +
     '<div class="sum big"><span>الإجمالي</span><span>' + lyd(o.total) + '</span></div><div class="sum"><span>المدفوع</span><span>' + lyd(o.paid) + '</span></div><div class="sum"><span>المتبقي</span><span>' + lyd(o.total - o.paid) + '</span></div>' +
@@ -289,6 +290,10 @@ function setStatus(id, s) {
   }
   const label = { confirmed: 'تأكيد الطلب', shipped: 'تسليم الطلب للمندوب (سيُخصم من المخزون)', delivered: 'تأكيد أن العميل استلم الطلب', cancelled: 'إلغاء الطلب', returned: 'تسجيل الطلب كمرتجع وإعادته للمخزون' }[s];
   modal('تأكيد', '<p>' + label + '؟</p>', () => { if (!commit('order_status', { orderId: id, status: s })) return false; }, 'نعم');
+}
+function courierModal(id) {
+  const o = S.orders[id];
+  modal('كود شركة التوصيل', '<label>الكود الذي أعطتك إياه الشركة<input name="c" dir="ltr" value="' + esc(o.courierCode || '') + '"></label>', f => { if (!commit('order_edit', { orderId: id, courierCode: f.c.value.trim() })) return false; });
 }
 function payModal(id) {
   const o = S.orders[id], rem = o.total - o.paid;
@@ -316,21 +321,30 @@ function pgStock() {
   } else if (t === 'prod') {
     const ps = Object.values(S.products).filter(p => p.active !== false);
     h += ps.length ? '<div class="tw"><table><tr><th>المنتج</th><th class="n">السعر</th>' + (cost ? '<th class="n">التكلفة</th><th class="n">الهامش</th>' : '') + '<th class="n">المخزون</th><th></th></tr>' + ps.map(p => {
-      const rc = C.recipeCost(S, p), mg = p.price > 0 ? Math.round((p.price - rc) / p.price * 100) : 0;
-      return '<tr><td>' + esc(p.name) + '<small class="d">' + p.sizeMl + ' مل</small></td><td class="n">' + num(p.price) + '</td>' + (cost ? '<td class="n">' + num(rc) + '</td><td class="n ' + (mg < 30 ? 'low' : '') + '">' + mg + '%</td>' : '') + '<td class="n">' + p.stock + '</td><td class="n">' + (C.can(r, 'production') ? '<button class="btn sm" data-a="prod" data-id="' + p.id + '">تعبئة</button> ' : '') + (C.can(r, 'adjust') ? '<button class="btn sm" data-a="adj" data-t="product" data-id="' + p.id + '">تسوية</button> ' : '') + (C.can(r, 'product_upsert') ? '<button class="btn sm" data-a="editProd" data-id="' + p.id + '">تعديل</button>' : '') + '</td></tr>';
-    }).join('') + '</table></div>' : '<div class="empty">أضف منتجًا وحدّد تركيبته من المواد الخام</div>';
+      const rc = p.recipe.length ? C.recipeCost(S, p) : (p.stock > 0 ? Math.round(p.value / p.stock) : 0), mg = p.price > 0 ? Math.round((p.price - rc) / p.price * 100) : 0;
+      return '<tr><td>' + esc(p.name) + '<small class="d">' + p.sizeMl + ' مل</small></td><td class="n">' + num(p.price) + '</td>' + (cost ? '<td class="n">' + num(rc) + '</td><td class="n ' + (mg < 30 ? 'low' : '') + '">' + mg + '%</td>' : '') + '<td class="n">' + p.stock + '</td><td class="n">' + (C.can(r, 'production') && p.recipe.length ? '<button class="btn sm" data-a="prod" data-id="' + p.id + '">تعبئة</button> ' : '') + (C.can(r, 'adjust') ? '<button class="btn sm" data-a="adj" data-t="product" data-id="' + p.id + '">تسوية</button> ' : '') + (C.can(r, 'product_upsert') ? '<button class="btn sm" data-a="editProd" data-id="' + p.id + '">تعديل</button>' : '') + '</td></tr>';
+    }).join('') + '</table></div>' : '<div class="empty">أضف منتجًا: اسم العطر والزيت وعدد الزجاجات من العبوة، والباقي يُحسب تلقائيًا</div>';
   } else {
-    const mv = S.movements.slice().sort((a, b) => b.ts - a.ts).slice(0, 120), K = { purchase: 'شراء', consume: 'استهلاك', produce: 'إنتاج', ship: 'شحن', restock: 'إرجاع', adjust: 'تسوية' };
+    const mv = S.movements.slice().sort((a, b) => b.ts - a.ts).slice(0, 120), K = { purchase: 'شراء', consume: 'استهلاك', produce: 'إنتاج', ship: 'شحن', restock: 'إرجاع', adjust: 'تسوية', opening: 'رصيد افتتاحي' };
     h += mv.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>الحركة</th><th>الصنف</th><th class="n">الكمية</th>' + (cost ? '<th class="n">القيمة</th>' : '') + '</tr>' + mv.map(m => '<tr><td>' + m.date + '</td><td>' + K[m.kind] + '</td><td>' + esc(m.name) + '<small class="d">' + esc(m.note || '') + '</small></td><td class="n">' + (m.type === 'material' ? num(m.qty) : m.qty) + '</td>' + (cost ? '<td class="n">' + num(m.value) + '</td>' : '') + '</tr>').join('') + '</table></div>' : '<div class="empty">لا توجد حركات</div>';
   }
   return h;
 }
 function matModal(id) {
-  const m = S.materials[id] || {};
-  modal(id ? 'تعديل مادة' : 'مادة خام جديدة', '<label>الاسم<input name="name" value="' + esc(m.name || '') + '" placeholder="مثال: كحول إيثانول 96%"></label><div class="g2"><label>التصنيف<select name="cat">' + opt(C.MAT_CATS, m.cat) + '</select></label><label>وحدة القياس<select name="unit">' + opt(C.UNITS, m.unit) + '</select></label></div><label>حد التنبيه عند النقص<input name="min" inputmode="decimal" value="' + (m.min ? m.min / 1000 : 0) + '"></label>', f => {
+  const m = S.materials[id] || {}, isNew = !id;
+  modal(id ? 'تعديل مادة' : 'مادة خام جديدة', '<label>الاسم<input name="name" value="' + esc(m.name || '') + '" placeholder="مثال: كحول إيثانول 96%"></label><div class="g2"><label>التصنيف<select name="cat">' + opt(C.MAT_CATS, m.cat) + '</select></label><label>وحدة القياس<select name="unit">' + opt(C.UNITS, m.unit) + '</select></label></div><label>حد التنبيه عند النقص<input name="min" inputmode="decimal" value="' + (m.min ? m.min / 1000 : 0) + '"></label>' +
+    (isNew ? '<h3>ما عندك منها الآن (اختياري)</h3><div class="g2"><label>الكمية الموجودة<input name="q0" inputmode="decimal"></label><label>إجمالي ما دفعته (د.ل)<input name="a0" inputmode="decimal"></label></div><p class="hint">اتركهما فارغين إن لم تشترِها بعد، وسجّل الشراء لاحقًا من زر «شراء». الزيت والكحول: اختر الوحدة «مل»، والزجاجة بغطائها ورشاشها قطعة واحدة.</p>' : ''), f => {
     const v = fd(f), mn = fnum(v.min, 0);
     if (!(mn >= 0)) { toast('حد التنبيه غير صحيح', 1); return false; }
-    if (!commit('material_upsert', { id: id || C.uid(), name: v.name.trim(), cat: v.cat, unit: v.unit, min: mn })) return false;
+    let buy = null;
+    if (isNew && (v.q0.trim() || v.a0.trim())) {
+      const q = C.toM(v.q0), a = C.toM(v.a0);
+      if (!(q > 0) || !(a > 0)) { toast('أدخل الكمية والمبلغ معًا، أو اتركهما فارغين', 1); return false; }
+      buy = { q, a };
+    }
+    const mid = id || C.uid();
+    if (!commit('material_upsert', { id: mid, name: v.name.trim(), cat: v.cat, unit: v.unit, min: mn })) return false;
+    if (buy && !commit('purchase', { materialId: mid, qty: buy.q, amt: buy.a, currency: 'LYD', rate: 0, supplier: 'رصيد أولي' })) return false;
   });
 }
 function buyModal(id) {
@@ -347,7 +361,64 @@ function adjModal(target, id) {
     if (!commit('adjust', { target, id, delta: d, reason: v.r })) return false;
   });
 }
+const PACK_CATS = ['glass', 'box', 'sticker', 'bag', 'other'];
+function blendFrom(f) {
+  const size = Number(C.normDigits(f.size.value)) || 0, cont = C.toM(f.cont.value), y = Number(C.normDigits(f.yield.value)) || 0;
+  const oil = S.materials[f.oil.value], alc = S.materials[f.alc.value];
+  if (!oil) return { none: true };
+  if (!(size > 0) || !(cont > 0) || !(y > 0) || !Number.isInteger(y)) return { err: 'أدخل الحجم وحجم عبوة الزيت وعدد الزجاجات' };
+  if (!alc) return { err: 'اختر الكحول (أو أضفه من المخزون)' };
+  const oilM = Math.round(cont / y), alcM = size * 1000 - oilM;
+  if (alcM <= 0) return { err: 'الزيت للزجاجة أكبر من حجمها: راجع عدد الزجاجات' };
+  const recipe = [{ materialId: oil.id, qty: oilM }, { materialId: alc.id, qty: alcM }];
+  const packs = $$('[name=pk]:checked', f).map(c => c.value);
+  packs.forEach(pid => recipe.push({ materialId: pid, qty: 1000 }));
+  return { recipe, packs, oilM, alcM, oil: { oilId: oil.id, cont, yield: y, alcId: alc.id }, cost: C.recipeCost(S, { recipe }) };
+}
 function prodModal(id) {
+  const pr = S.products[id];
+  if (pr && !pr.oil && pr.recipe.length) return prodModalAdv(id);
+  const mats = Object.values(S.materials).filter(m => m.active !== false);
+  const oils = mats.filter(m => m.cat === 'oil'), alcs = mats.filter(m => m.cat === 'alcohol'), packs = mats.filter(m => PACK_CATS.includes(m.cat));
+  const o = (pr && pr.oil) || {}, last = pr ? pr.recipe.map(l => l.materialId) : LS.get('lastPack', null);
+  modal(id ? 'تعديل منتج' : 'منتج جديد',
+    '<label>اسم العطر<input name="name" value="' + esc(pr ? pr.name : '') + '"></label><div class="g2"><label>الحجم (مل)<input name="size" inputmode="numeric" value="' + ((pr && pr.sizeMl) || 50) + '"></label><label>سعر البيع (د.ل)<input name="price" inputmode="decimal" value="' + (pr && pr.price ? pr.price / 1000 : '') + '"></label></div>' +
+    '<h3>التصنيع</h3><label>الزيت العطري<select name="oil"><option value="">بدون تصنيع (منتج جاهز فقط)</option>' + oils.map(m => '<option value="' + m.id + '"' + (m.id === o.oilId ? ' selected' : '') + '>' + esc(m.name) + '</option>').join('') + '</select></label>' +
+    '<div class="g2"><label>حجم عبوة الزيت<input name="cont" inputmode="decimal" value="' + (o.cont ? o.cont / 1000 : 100) + '"></label><label>كم زجاجة تخرج منها؟<input name="yield" inputmode="numeric" value="' + (o.yield || '') + '"></label></div>' +
+    '<label>الكحول<select name="alc">' + (alcs.length ? '' : '<option value="">أضف الكحول أولًا</option>') + alcs.map(m => '<option value="' + m.id + '"' + (m.id === o.alcId ? ' selected' : '') + '>' + esc(m.name) + '</option>').join('') + '</select></label>' +
+    '<h3>التغليف لكل زجاجة</h3>' + (packs.length ? packs.map(m => '<label style="display:flex;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" name="pk" value="' + m.id + '" style="width:auto;margin:0"' + (!last || last.includes(m.id) ? ' checked' : '') + '>' + esc(m.name) + '</label>').join('') : '<p class="hint">أضف الزجاجة والعلبة والستيكر والكيس كمواد خام لتظهر هنا.</p>') +
+    '<div class="alert info" id="pv" style="margin-top:8px"></div>' +
+    '<h3>' + (id ? 'إضافة رصيد جاهز' : 'عندك منه جاهز الآن؟ (اختياري)') + '</h3><div class="g2"><label>عدد الزجاجات<input name="n0" inputmode="numeric"></label><label>تكلفة الزجاجة (د.ل)<input name="c0" inputmode="decimal"></label></div><p class="hint">اترك التكلفة فارغة لاعتماد تكلفة التصنيع المحسوبة أعلاه.</p>' +
+    '<button type="button" class="btn sm" data-a="advProd" data-id="' + (id || '') + '">متقدم: تحديد التركيبة يدويًا</button>',
+    f => {
+      const v = fd(f), size = Number(C.normDigits(v.size)) || 0, price = C.toM(v.price);
+      let recipe = [], oil = null, b = { none: true };
+      if (v.oil) {
+        b = blendFrom(f);
+        if (b.err) { toast(b.err, 1); return false; }
+        recipe = b.recipe; oil = b.oil;
+      }
+      let n0 = 0, c0 = 0;
+      if (v.n0.trim()) {
+        n0 = Number(C.normDigits(v.n0)); c0 = v.c0.trim() ? C.toM(v.c0) : (b.cost || NaN);
+        if (!Number.isInteger(n0) || n0 <= 0) { toast('عدد الزجاجات الجاهزة غير صحيح', 1); return false; }
+        if (!(c0 >= 0)) { toast('أدخل تكلفة الزجاجة الجاهزة', 1); return false; }
+      }
+      const pid = id || C.uid();
+      if (!commit('product_upsert', { id: pid, name: v.name.trim(), sizeMl: size, price, recipe, oil })) return false;
+      if (b.packs) LS.set('lastPack', b.packs);
+      if (n0 && !commit('adjust', { target: 'product', id: pid, delta: n0, opening: true, unitCost: c0, reason: 'رصيد افتتاحي' })) return false;
+    });
+  const pv = () => {
+    const f = $('#mf'), b = blendFrom(f), box = $('#pv');
+    if (!box) return;
+    if (b.none) box.textContent = 'منتج جاهز بدون تصنيع: لن يظهر له زر «تعبئة»، وتضيف رصيده من الخانة أدناه.';
+    else if (b.err) box.textContent = b.err;
+    else box.innerHTML = 'للزجاجة الواحدة: زيت <b>' + num(b.oilM) + '</b> + كحول <b>' + num(b.alcM) + '</b> + ' + b.packs.length + ' من التغليف' + (seesCost() ? '<br>التكلفة التقريبية: <b>' + (b.cost ? num(b.cost) + ' د.ل' : '— (سجّل شراء المواد أولًا)') + '</b>' : '');
+  };
+  $('#mf').addEventListener('input', pv); $('#mf').addEventListener('change', pv); pv();
+}
+function prodModalAdv(id) {
   const pr = S.products[id] || { recipe: [] }, mats = Object.values(S.materials).filter(m => m.active !== false);
   if (!mats.length) return toast('أضف المواد الخام أولًا', 1);
   const rl = l => '<div class="line"><label>المكوّن<select name="mid">' + mats.map(m => '<option value="' + m.id + '"' + (l && l.materialId === m.id ? ' selected' : '') + '>' + esc(m.name) + ' (' + C.UNITS[m.unit] + ')</option>').join('') + '</select></label><label>الكمية لكل وحدة<input name="rq" inputmode="decimal" value="' + (l ? l.qty / 1000 : '') + '"></label><span></span><button type="button" class="x" data-a="rmLine">×</button></div>';
@@ -361,10 +432,21 @@ function prodModal(id) {
 }
 function produceModal(id) {
   const p = S.products[id];
-  modal('تعبئة: ' + p.name, '<label>عدد الوحدات المعبّأة<input name="u" inputmode="numeric" value="1"></label><div class="alert info">يُخصم من المخزون لكل وحدة: ' + p.recipe.map(l => esc((S.materials[l.materialId] || {}).name) + ' ' + num(l.qty)).join(' + ') + '</div><label>ملاحظة<input name="n"></label>', f => {
+  if (!p.recipe.length) return toast('هذا المنتج بلا تصنيع. أضف رصيده الجاهز من «تعديل».', 1);
+  const y = (p.oil && p.oil.yield) || 0;
+  modal('تعبئة: ' + p.name, (y ? '<div class="g2"><label>عبوات الزيت التي فتحتها<input name="c" inputmode="numeric" value="1"></label><label>عدد الزجاجات<input name="u" inputmode="numeric" value="' + y + '"></label></div><p class="hint">كل عبوة تعطي ' + y + ' زجاجات. عدّل عدد الزجاجات إن لم تُنهِ العبوة.</p>' : '<label>عدد الوحدات المعبّأة<input name="u" inputmode="numeric" value="1"></label>') + '<div id="need"></div><label>ملاحظة<input name="n"></label>', f => {
     const u = Number(C.normDigits(f.u.value));
     if (!commit('production', C.productionPayload(S, id, u, f.n.value))) return false;
   }, 'تنفيذ التعبئة');
+  const f = $('#mf'), upd = () => {
+    const u = Number(C.normDigits(f.u.value)) || 0;
+    $('#need').innerHTML = '<h3>سيُخصم من المخزون</h3>' + p.recipe.map(l => {
+      const m = S.materials[l.materialId] || { name: '؟', qty: 0, unit: 'pcs' }, need = l.qty * u, ok = m.qty >= need;
+      return '<div class="sum"><span>' + esc(m.name) + '</span><span class="' + (ok ? '' : 'low') + '">' + qty(need, m.unit) + ' <small class="d">(المتاح ' + num(m.qty) + ')</small></span></div>';
+    }).join('');
+  };
+  if (f.c) f.c.oninput = () => { f.u.value = (Number(C.normDigits(f.c.value)) || 0) * y; upd(); };
+  f.u.oninput = upd; upd();
 }
 
 // ---------- المصروفات ----------
@@ -398,7 +480,7 @@ function pgRep() {
 // ---------- الإعدادات ----------
 function describe(o) {
   const p = o.p, u = (S.users[o.by] || {}).name || '';
-  const t = { user_upsert: 'مستخدم: ' + p.name, settings_set: 'إعدادات', material_upsert: 'مادة: ' + p.name, product_upsert: 'منتج: ' + p.name, purchase: 'شراء ' + ((S.materials[p.materialId] || {}).name || ''), production: 'تعبئة ' + p.units + ' × ' + ((S.products[p.productId] || {}).name || ''), order_create: 'طلب ' + p.code, order_status: 'حالة ' + ((S.orders[p.orderId] || {}).code || '') + ' ← ' + C.STATUS[p.status], payment: 'دفعة ' + num(p.amt), expense: 'مصروف ' + C.EXP_CATS[p.cat] + ' ' + num(p.amt), adjust: 'تسوية: ' + p.reason, void: 'إلغاء عملية' }[o.type];
+  const t = { user_upsert: 'مستخدم: ' + p.name, settings_set: 'إعدادات', material_upsert: 'مادة: ' + p.name, product_upsert: 'منتج: ' + p.name, purchase: 'شراء ' + ((S.materials[p.materialId] || {}).name || ''), production: 'تعبئة ' + p.units + ' × ' + ((S.products[p.productId] || {}).name || ''), order_create: 'طلب ' + p.code, order_edit: 'كود توصيل ' + ((S.orders[p.orderId] || {}).code || ''), order_status: 'حالة ' + ((S.orders[p.orderId] || {}).code || '') + ' ← ' + C.STATUS[p.status], payment: 'دفعة ' + num(p.amt), expense: 'مصروف ' + C.EXP_CATS[p.cat] + ' ' + num(p.amt), adjust: 'تسوية: ' + p.reason, void: 'إلغاء عملية' }[o.type];
   return o.date + ' · ' + t + ' · ' + u;
 }
 function pgSet() {
@@ -438,10 +520,10 @@ const A = {
   close: closeModal,
   connect: connectModal, logout,
   syncNow: () => sync(true).then(ok => { toast(ok ? 'تمت المزامنة' : 'تعذرت المزامنة: ' + lastErr, !ok); render(); }),
-  newOrder, order: t => orderDetail(t.dataset.id), status: t => setStatus(t.dataset.id, t.dataset.s), pay: t => payModal(t.dataset.id), print: t => printOrder(t.dataset.id),
+  newOrder, order: t => orderDetail(t.dataset.id), status: t => setStatus(t.dataset.id, t.dataset.s), pay: t => payModal(t.dataset.id), ccode: t => courierModal(t.dataset.id), print: t => printOrder(t.dataset.id),
   addLine: () => $('#lines').insertAdjacentHTML('beforeend', lineHtml()),
   rmLine: t => { const ls = $$('.line'); if (ls.length > 1) { t.closest('.line').remove(); calcOrderForm(); } },
-  editMat: t => matModal(t.dataset.id), editProd: t => prodModal(t.dataset.id), buy: t => buyModal(t.dataset.id), adj: t => adjModal(t.dataset.t, t.dataset.id), prod: t => produceModal(t.dataset.id),
+  editMat: t => matModal(t.dataset.id), editProd: t => prodModal(t.dataset.id), advProd: t => prodModalAdv(t.dataset.id || undefined), buy: t => buyModal(t.dataset.id), adj: t => adjModal(t.dataset.t, t.dataset.id), prod: t => produceModal(t.dataset.id),
   newExp: expModal, user: t => userModal(t.dataset.id),
   rate: () => modal('سعر الصرف', '<label>دينار لكل 1 دولار<input name="r" inputmode="decimal" value="' + S.settings.rate / 1000 + '"></label>', f => { if (!commit('settings_set', { rate: C.toM(f.r.value) })) return false; }),
   void: t => askConfirm('سيتم عكس أثر هذه العملية بالكامل. متأكد؟', () => commit('void', { target: t.dataset.id })),
