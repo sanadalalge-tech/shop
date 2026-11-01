@@ -321,7 +321,7 @@ function pgStock() {
   } else if (t === 'prod') {
     const ps = Object.values(S.products).filter(p => p.active !== false);
     h += ps.length ? '<div class="tw"><table><tr><th>المنتج</th><th class="n">السعر</th>' + (cost ? '<th class="n">التكلفة</th><th class="n">الهامش</th>' : '') + '<th class="n">المخزون</th><th></th></tr>' + ps.map(p => {
-      const rc = p.recipe.length ? C.recipeCost(S, p) : (p.stock > 0 ? Math.round(p.value / p.stock) : 0), mg = p.price > 0 ? Math.round((p.price - rc) / p.price * 100) : 0;
+      const rc = p.stock > 0 ? Math.round(p.value / p.stock) : C.recipeCost(S, p), mg = p.price > 0 ? Math.round((p.price - rc) / p.price * 100) : 0;
       return '<tr><td>' + esc(p.name) + '<small class="d">' + p.sizeMl + ' مل</small></td><td class="n">' + num(p.price) + '</td>' + (cost ? '<td class="n">' + num(rc) + '</td><td class="n ' + (mg < 30 ? 'low' : '') + '">' + mg + '%</td>' : '') + '<td class="n">' + p.stock + '</td><td class="n">' + (C.can(r, 'production') && p.recipe.length ? '<button class="btn sm" data-a="prod" data-id="' + p.id + '">تعبئة</button> ' : '') + (C.can(r, 'adjust') ? '<button class="btn sm" data-a="adj" data-t="product" data-id="' + p.id + '">تسوية</button> ' : '') + (C.can(r, 'product_upsert') ? '<button class="btn sm" data-a="editProd" data-id="' + p.id + '">تعديل</button>' : '') + '</td></tr>';
     }).join('') + '</table></div>' : '<div class="empty">أضف منتجًا: اسم العطر والزيت وعدد الزجاجات من العبوة، والباقي يُحسب تلقائيًا</div>';
   } else {

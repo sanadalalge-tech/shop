@@ -115,18 +115,20 @@
   }
   function take(o, k, n) {
     const have = o[k];
+    if (have > 0 && o.value > 0) o.lastUnit = o.value / have;
     let cost;
     if (have <= 0) cost = 0; else if (n >= have) cost = o.value; else cost = Math.round(o.value * n / have);
     o.value -= cost; o[k] = have - n;
     if (o[k] === 0) o.value = 0;
     return cost;
   }
-  function put(o, k, n, cost) { o[k] += n; o.value += cost; }
+  function put(o, k, n, cost) { o[k] += n; o.value += cost; if (o[k] > 0 && o.value > 0) o.lastUnit = o.value / o[k]; }
   function recipeCost(S, product) {
     let t = 0;
     for (const l of product.recipe || []) {
       const m = S.materials[l.materialId];
       if (m && m.qty > 0) t += Math.round(m.value * l.qty / m.qty);
+      else if (m && m.lastUnit > 0) t += Math.round(m.lastUnit * l.qty);
     }
     return t;
   }
