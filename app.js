@@ -294,7 +294,7 @@ function pgOrders() {
 }
 function bindOrders() { const q = $('#oq'); if (q) q.oninput = () => { ui.q = q.value; $('#olist').innerHTML = ordersList(); }; }
 const CHANNELS = ['فيسبوك', 'انستغرام', 'واتساب', 'تيك توك', 'مشهور / مؤثر', 'زيارة المتجر', 'أخرى'];
-const PAYS = { cod: 'عند الاستلام', bank: 'تحويل مصرفي', wallet: 'محفظة', paid: 'مدفوع مسبقًا' };
+const PAYS = C.PAY_METHODS, payLabel = k => PAYS[k] || ({ cod: 'عند الاستلام', wallet: 'محفظة', paid: 'مدفوع مسبقًا' })[k] || k || '';
 const CITIES = ['طرابلس', 'بنغازي', 'مصراتة', 'الزاوية', 'زليتن', 'البيضاء', 'طبرق', 'سبها', 'صبراتة', 'الخمس', 'غريان', 'أجدابيا', 'درنة', 'سرت', 'الزنتان'];
 function campaignNames() { return [...new Set(Object.values(S.orders).map(o => o.campaign).concat(S.expenses.map(e => e.campaign)).filter(Boolean))]; }
 
@@ -358,7 +358,7 @@ function newOrder() {
   modal('طلب جديد', '<div class="sec"><h3>العميل</h3><div class="g2 keep"><label>الاسم<input name="name" autocomplete="off"></label><label>الهاتف<input name="phone" inputmode="tel" dir="ltr"></label></div><div id="rk"></div><div class="g2 keep"><label>هاتف ثانٍ<input name="phone2" inputmode="tel" dir="ltr"></label><label>المدينة<input name="city" list="cities"></label></div><datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist><div class="g2 keep"><label>المنطقة / الحي<input name="area"></label><label>العنوان / أقرب نقطة دالة<input name="address"></label></div></div>' +
     '<div class="sec"><h3>المنتجات</h3><div id="lines">' + lineHtml() + '</div><div class="row"><button type="button" class="btn sm" data-a="addLine">+ منتج آخر</button>' + (bundles.length ? '<select id="bsel" style="width:auto;margin:0"><option value="">+ باقة…</option>' + bundles.map(b => '<option value="' + b.id + '">' + esc(b.name) + ' — ' + num(b.price) + '</option>').join('') + '</select>' : '') + '</div><small class="d" id="ogift" style="margin:6px 0"></small></div>' +
     (manual ? '<div class="sec"><h3>الخصم</h3><div class="g2 keep"><label>خصم يدوي<input name="discount" inputmode="decimal" value="0"></label><label>نوعه<select name="dkind"><option value="amt">مبلغ (د.ل)</option><option value="pct">نسبة %</option></select></label></div><small class="d" id="dmsg" style="margin:-4px 0 8px"></small></div>' : '') +
-    '<div class="sec"><h3>التوصيل والدفع</h3><div class="g2 keep"><label>رسوم توصيل يدفعها العميل<input name="deliveryFee" inputmode="decimal" value="0"></label><label>تكلفة المندوب علينا<input name="courierCost" inputmode="decimal" value="0"></label></div><div class="g2 keep"><label>كود شركة التوصيل<input name="ccode" dir="ltr"></label><label>طريقة الدفع<select name="pay">' + opt(PAYS, 'cod') + '</select></label></div></div>' +
+    '<div class="sec"><h3>التوصيل والدفع</h3><div class="g2 keep"><label>رسوم توصيل يدفعها العميل<input name="deliveryFee" inputmode="decimal" value="0"></label><label>تكلفة المندوب علينا<input name="courierCost" inputmode="decimal" value="0"></label></div><div class="g2 keep"><label>كود شركة التوصيل<input name="ccode" dir="ltr"></label><label>طريقة الدفع<select name="pay">' + opt(PAYS, 'cash') + '</select></label></div></div>' +
     '<div class="sec"><h3>المصدر</h3><div class="g2 keep"><label>القناة<select name="channel">' + CHANNELS.map(c => '<option>' + c + '</option>').join('') + '</select></label><label>الحملة الإعلانية<input name="campaign" list="camps" autocomplete="off"></label></div><datalist id="camps">' + campaignNames().map(c => '<option value="' + esc(c) + '">').join('') + '</datalist></div>' +
     '<label>ملاحظة<input name="note"></label><div class="sum big"><span>الإجمالي</span><span id="otot">—</span></div><div class="hint" id="oprof" style="margin-top:6px"></div>', f => {
       const v = fd(f), items = orderLines(f);
@@ -397,7 +397,7 @@ function orderDetail(id) {
   const next = (C.TRANSITIONS[o.status] || []).filter(s => s !== 'confirmed' && C.canOp(role(), { type: 'order_status', p: { status: s } })), c = o.customer, rk = C.customerRisk(S, c.phone);
   const m = $('#modal');
   m.innerHTML = '<div class="sheet"><div class="row spread"><h2>' + esc(o.code) + '</h2>' + stBadge(o.status) + '</div>' +
-    '<div class="card"><b>' + esc(c.name) + '</b> · <a href="tel:' + esc(c.phone) + '" dir="ltr">' + esc(c.phone) + '</a>' + (c.phone2 ? ' · <a href="tel:' + esc(c.phone2) + '" dir="ltr">' + esc(c.phone2) + '</a>' : '') + '<small class="d">' + esc(c.city) + (c.area ? ' / ' + esc(c.area) : '') + ' — ' + esc(c.address || '') + '<br>' + o.date + ' · ' + esc(o.channel) + (o.campaign ? ' · حملة: ' + esc(o.campaign) : '') + ' · ' + esc(PAYS[o.payMethod] || '') + ' · ' + esc((S.users[o.by] || {}).name || '') + (o.note ? '<br>' + esc(o.note) : '') + '</small>' + (rk.level === 'warn' || rk.level === 'high' ? '<div class="alert ' + (rk.level === 'high' ? 'err' : 'warn') + '" style="margin-top:8px">' + esc(rk.msg) + '</div>' : '') + '</div>' +
+    '<div class="card"><b>' + esc(c.name) + '</b> · <a href="tel:' + esc(c.phone) + '" dir="ltr">' + esc(c.phone) + '</a>' + (c.phone2 ? ' · <a href="tel:' + esc(c.phone2) + '" dir="ltr">' + esc(c.phone2) + '</a>' : '') + '<small class="d">' + esc(c.city) + (c.area ? ' / ' + esc(c.area) : '') + ' — ' + esc(c.address || '') + '<br>' + o.date + ' · ' + esc(o.channel) + (o.campaign ? ' · حملة: ' + esc(o.campaign) : '') + ' · ' + esc(payLabel(o.payMethod) || '') + ' · ' + esc((S.users[o.by] || {}).name || '') + (o.note ? '<br>' + esc(o.note) : '') + '</small>' + (rk.level === 'warn' || rk.level === 'high' ? '<div class="alert ' + (rk.level === 'high' ? 'err' : 'warn') + '" style="margin-top:8px">' + esc(rk.msg) + '</div>' : '') + '</div>' +
     '<div class="row spread card"><span>كود شركة التوصيل: <b dir="ltr">' + (o.courierCode ? esc(o.courierCode) : '—') + '</b></span>' + (C.can(role(), 'order_edit') ? '<button class="btn sm" data-a="ccode" data-id="' + o.id + '">' + (o.courierCode ? 'تعديل' : 'إضافة') + '</button>' : '') + '</div>' +
     '<div class="tw"><table>' + o.items.map(i => '<tr><td>' + esc(i.name) + (i.gift ? ' <span class="pill">هدية 🎁</span>' : '') + (i.bundle ? ' <span class="pill">' + esc(i.bundle) + '</span>' : '') + '</td><td class="n">' + i.qty + ' × ' + num(i.price) + '</td><td class="n">' + num(i.qty * i.price) + '</td></tr>').join('') + '</table></div>' +
     '<div class="sum"><span>المنتجات</span><span>' + lyd(o.itemsTotal) + '</span></div>' + (o.discount ? '<div class="sum"><span>خصم' + (o.discountPct ? ' ' + num(o.discountPct) + '%' : '') + '</span><span>- ' + lyd(o.discount) + '</span></div>' : '') + (o.deliveryFee ? '<div class="sum"><span>توصيل</span><span>' + lyd(o.deliveryFee) + '</span></div>' : '') +
@@ -422,7 +422,11 @@ function courierModal(id) {
 }
 function payModal(id) {
   const o = S.orders[id], rem = o.total - o.paid;
-  modal('تسجيل دفعة', '<label>المبلغ (د.ل) — المتبقي ' + num(rem) + '<input name="amt" inputmode="decimal" value="' + rem / 1000 + '"></label><label>الطريقة<select><option>نقدًا</option><option>تحويل مصرفي</option><option>محفظة</option><option>تحصيل من شركة التوصيل</option></select></label>', f => { if (!commit('payment', { orderId: id, amt: C.toM(f.amt.value), method: f.querySelector('select').value })) return false; });
+  modal('تسجيل دفعة', '<p class="hint">المتبقي ' + num(rem) + ' د.ل</p><div class="g2 keep"><label>المبلغ<input name="amt" inputmode="decimal" value="' + rem / 1000 + '"></label><label>العملة<select name="cur">' + curOpts() + '</select></label></div>' + rateField + '<label>طريقة الدفع<select name="method">' + opt(PAYS, 'cash') + '<option value="courier">تحصيل من شركة التوصيل</option></select></label>', f => {
+    const v = fd(f), orig = C.toM(v.amt), rate = C.toM(v.rate), cur = v.cur;
+    if (cur !== 'LYD' && !(rate > 0)) { toast('سعر الصرف مطلوب', 1); return false; }
+    if (!commit('payment', { orderId: id, amt: C.toLyd(orig, cur, rate), cur, orig, rate: cur === 'LYD' ? 0 : rate, method: v.method })) return false;
+  });
 }
 
 // ---------- تجهيز التوصيل: نسخ بترتيب تطبيق شركة التوصيل ----------
@@ -507,7 +511,7 @@ function matModal(id) {
 }
 function buyModal(id) {
   const m = S.materials[id];
-  modal('شراء: ' + m.name, '<label>الكمية (' + C.UNITS[m.unit] + ')<input name="qty" inputmode="decimal"></label><div class="g2"><label>إجمالي السعر<input name="amt" inputmode="decimal"></label><label>العملة<select name="cur"><option value="LYD">دينار</option><option value="USD">دولار</option></select></label></div><label>سعر الصرف<input name="rate" inputmode="decimal" value="' + (S.settings.rate / 1000 || '') + '"></label><p class="hint">يُستخدم سعر الصرف عند الشراء بالدولار وتُسجَّل التكلفة بالدينار.</p><label>المورد<input name="sup" list="sups" autocomplete="off"></label><datalist id="sups">' + [...new Set(Object.values(S.debts).map(d => d.party).concat(S.movements.filter(x => x.kind === 'purchase' && x.note).map(x => x.note)))].map(n => '<option value="' + esc(n) + '">').join('') + '</datalist><div class="g2"><label>المدفوع الآن (اتركه فارغًا إن دفعت كامل المبلغ)<input name="paid" inputmode="decimal"></label><label>موعد سداد الباقي<input name="due" type="date"></label></div><p class="hint">إن دفعت جزءًا فقط يُسجَّل الباقي تلقائيًا دينًا عليك للمورد في «الديون».</p>', f => {
+  modal('شراء: ' + m.name, '<label>الكمية (' + C.UNITS[m.unit] + ')<input name="qty" inputmode="decimal"></label><div class="g2"><label>إجمالي السعر<input name="amt" inputmode="decimal"></label><label>العملة<select name="cur">' + curOpts() + '</select></label></div>' + rateField + '<p class="hint">عند الشراء بعملة غير الدينار يظهر سعر الصرف وتُسجَّل التكلفة بالدينار.</p><label>المورد<input name="sup" list="sups" autocomplete="off"></label><datalist id="sups">' + [...new Set(Object.values(S.debts).map(d => d.party).concat(S.movements.filter(x => x.kind === 'purchase' && x.note).map(x => x.note)))].map(n => '<option value="' + esc(n) + '">').join('') + '</datalist><div class="g2"><label>المدفوع الآن (اتركه فارغًا إن دفعت كامل المبلغ)<input name="paid" inputmode="decimal"></label><label>موعد سداد الباقي<input name="due" type="date"></label></div><p class="hint">إن دفعت جزءًا فقط يُسجَّل الباقي تلقائيًا دينًا عليك للمورد في «الديون».</p>', f => {
     const v = fd(f), paid = v.paid.trim() === '' ? undefined : C.toM(v.paid), amt = C.toM(v.amt);
     const pl = { materialId: id, qty: C.toM(v.qty), amt, currency: v.cur, rate: C.toM(v.rate), supplier: v.sup.trim() };
     if (paid !== undefined) { pl.paid = paid; if (paid < amt && v.due) pl.due = v.due; }
@@ -622,7 +626,7 @@ function pgExp() {
     return backBar('المصروفات والمسحوبات') + tabs + periodChips() + '<div class="row spread"><span></span>' + (C.can(r, 'withdrawal') ? '<button class="btn pri" data-a="newWd">+ مسحوب شخصي</button>' : '') + '</div>' +
       '<div class="kpis">' + kpi('إجمالي المسحوبات', lyd(tot), usdv(tot), 'gold') + '</div>' +
       (list.length ? '<h3>حسب النوع</h3><div class="tw"><table>' + Object.keys(by).sort((a, b) => by[b] - by[a]).map(c => '<tr><td>' + C.WD_CATS[c] + '</td><td class="n">' + num(by[c]) + '</td></tr>').join('') + '</table></div>' +
-        '<h3>السجل</h3><div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th></tr>' + list.map(w => '<tr><td>' + w.date + '</td><td>' + C.WD_CATS[w.cat] + '<small class="d">' + esc(w.note || '') + '</small></td><td class="n">' + num(w.lyd) + (w.cur === 'USD' ? '<small class="d">$' + num(w.orig) + '</small>' : '') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مسحوبات في هذه الفترة</div>') +
+        '<h3>السجل</h3><div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th></tr>' + list.map(w => '<tr><td>' + w.date + '</td><td>' + C.WD_CATS[w.cat] + '<small class="d">' + esc(w.note || '') + '</small></td><td class="n">' + num(w.lyd) + (w.cur && w.cur !== 'LYD' ? '<small class="d">' + num(w.orig) + ' ' + w.cur + '</small>' : '') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مسحوبات في هذه الفترة</div>') +
       help('<b>المسحوبات الشخصية</b> تخرج من أموال المشروع لكنها لا تُحسب مصروفًا على البراند ولا تنقص صافي ربحه. تظهر في التقارير بسطر مستقل: صافي الربح ← المسحوبات ← المتبقي.');
   }
   let list = S.expenses.filter(e => inR(e.date)).sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -630,11 +634,14 @@ function pgExp() {
   const adSum = list.filter(e => C.AD_CATS.includes(e.cat)).reduce((a, e) => a + e.lyd, 0), tot = list.reduce((a, e) => a + e.lyd, 0);
   return backBar('المصروفات والمسحوبات') + tabs + periodChips() + '<div class="row spread"><span></span>' + (C.can(r, 'expense') ? '<button class="btn pri" data-a="newExp">+ مصروف</button>' : '') + '</div>' +
     '<div class="kpis">' + kpi('الإجمالي', lyd(tot), usdv(tot), 'gold') + kpi('إعلانات ومشاهير', lyd(adSum), usdv(adSum)) + '</div>' +
-    (list.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th></tr>' + list.map(e => '<tr><td>' + e.date + '</td><td>' + C.EXP_CATS[e.cat] + '<small class="d">' + esc(e.campaign ? 'حملة: ' + e.campaign + (e.note ? ' · ' : '') : '') + esc(e.note || '') + (e.auto ? ' · تلقائي' : '') + '</small></td><td class="n">' + num(e.lyd) + (e.cur === 'USD' ? '<small class="d">$' + num(e.orig) + '</small>' : '') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مصروفات في هذه الفترة</div>') +
+    (list.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th></tr>' + list.map(e => '<tr><td>' + e.date + '</td><td>' + C.EXP_CATS[e.cat] + '<small class="d">' + esc(e.campaign ? 'حملة: ' + e.campaign + (e.note ? ' · ' : '') : '') + esc(e.note || '') + (e.auto ? ' · تلقائي' : '') + '</small></td><td class="n">' + num(e.lyd) + (e.cur && e.cur !== 'LYD' ? '<small class="d">' + num(e.orig) + ' ' + e.cur + '</small>' : '') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مصروفات في هذه الفترة</div>') +
     help('شراء المواد الخام والتغليف يُسجَّل من «المخزون» ويدخل التكلفة عند التعبئة والبيع، فلا يُسجَّل هنا. الهدايا تُسجَّل داخل الطلب.');
 }
-const moneyFields = '<div class="g2 keep"><label>المبلغ<input name="amt" inputmode="decimal"></label><label>العملة<select name="cur"><option value="LYD">دينار</option><option value="USD">دولار</option></select></label></div><label>سعر الصرف (للدولار)<input name="rate" inputmode="decimal" value="__RATE__"></label>';
-const rateVal = () => (S.settings.rate / 1000 || '');
+const curOpts = sel => Object.keys(C.CURRENCIES).map(k => '<option value="' + k + '"' + (k === (sel || 'LYD') ? ' selected' : '') + '>' + C.CURRENCIES[k] + '</option>').join('');
+const rateOf = cur => { if (!cur || cur === 'LYD') return ''; const r = (S.settings.rates || {})[cur] || (cur === 'USD' ? S.settings.rate : 0); return r ? r / 1000 : ''; };
+const rateField = '<label class="rb" style="display:none">سعر الصرف (دينار ليبي مقابل وحدة واحدة)<input name="rate" inputmode="decimal"></label>';
+const moneyFields = '<div class="g2 keep"><label>المبلغ<input name="amt" inputmode="decimal"></label><label>العملة<select name="cur">' + curOpts() + '</select></label></div>' + rateField;
+const rateVal = () => '';
 function expModal() {
   const ads = role() === 'ads', cats = Object.keys(C.EXP_CATS).filter(k => k !== 'delivery_loss' && k !== 'gift' && (!ads || C.AD_CATS.includes(k)));
   modal('مصروف جديد', '<label>النوع<select name="cat">' + cats.map(k => '<option value="' + k + '">' + C.EXP_CATS[k] + '</option>').join('') + '</select></label>' + moneyFields.replace('__RATE__', rateVal()) +
@@ -742,7 +749,7 @@ function debtDetail(id) {
 }
 function debtPayModal(id) {
   const d = S.debts[id], rem = d.lyd - d.paid;
-  modal('دفعة: ' + d.party, '<p class="hint">المتبقي ' + num(rem) + ' د.ل</p><div class="g2 keep"><label>المبلغ<input name="amt" inputmode="decimal" value="' + rem / 1000 + '"></label><label>العملة<select name="cur"><option value="LYD">دينار</option><option value="USD">دولار</option></select></label></div><label>سعر الصرف (للدولار)<input name="rate" inputmode="decimal" value="' + rateVal() + '"></label><label>ملاحظة<input name="note"></label><label>التاريخ<input name="date" type="date" value="' + today() + '"></label>', f => {
+  modal('دفعة: ' + d.party, '<p class="hint">المتبقي ' + num(rem) + ' د.ل</p><div class="g2 keep"><label>المبلغ<input name="amt" inputmode="decimal" value="' + rem / 1000 + '"></label><label>العملة<select name="cur">' + curOpts() + '</select></label></div>' + rateField + '<label>ملاحظة<input name="note"></label><label>التاريخ<input name="date" type="date" value="' + today() + '"></label>', f => {
     const v = fd(f);
     if (!commit('debt_pay', { debtId: id, amt: C.toM(v.amt), currency: v.cur, rate: C.toM(v.rate), note: v.note.trim() }, v.date || today())) return false;
   }, 'تسجيل الدفعة');
@@ -753,7 +760,8 @@ function pgSet() {
   let h = backBar('الإعدادات') + '<div class="card"><b>' + esc(USER.name) + '</b> · ' + C.ROLES[r] + '<div class="row" style="margin-top:8px"><button class="btn" data-a="logout">تسجيل الخروج</button><button class="btn" data-a="helpSheet">دليل سريع</button></div></div>';
   h += '<div class="card"><b>المزامنة مع جوجل شيت</b><p class="hint">' + (cfg ? 'مرتبط. كل عملية تُحفظ على الجهاز أولًا ثم تُرفع عند توفر الإنترنت.' : 'غير مرتبط: البيانات محفوظة على هذا الجهاز فقط.') + '</p><div class="row"><button class="btn" data-a="syncNow">مزامنة الآن</button><button class="btn" data-a="connect">' + (cfg ? 'تغيير الربط' : 'ربط بجوجل شيت') + '</button></div></div>';
   if (own) {
-    h += '<div class="card"><div class="row spread"><b>سعر الصرف</b><button class="btn sm" data-a="rate">تعديل</button></div><p class="hint">' + num(S.settings.rate) + ' دينار لكل دولار. يُطبَّق على العمليات الجديدة فقط، والقديمة تحتفظ بسعرها.</p></div>';
+    const rt = S.settings.rates || {}, rl = Object.keys(C.CURRENCIES).filter(k => k !== 'LYD' && (rt[k] || (k === 'USD' && S.settings.rate)));
+    h += '<div class="card"><div class="row spread"><b>أسعار الصرف</b><button class="btn sm" data-a="rate">تعديل</button></div><p class="hint">كم دينارًا ليبيًا تساوي وحدة واحدة من كل عملة. تُطبَّق على العمليات الجديدة فقط، والقديمة تحتفظ بسعرها.</p>' + (rl.length ? rl.map(k => '<div class="sum"><span>' + C.CURRENCIES[k] + '</span><span dir="ltr">' + num(rt[k] || S.settings.rate) + ' د.ل</span></div>').join('') : '<small class="d">لم تُحدَّد أسعار بعد</small>') + '</div>';
     h += '<div class="card"><div class="row spread"><b>الهدف الشهري</b><button class="btn sm" data-a="goal">تعديل</button></div><p class="hint">' + (S.settings.goalOrders ? S.settings.goalOrders + ' طلب مستلم في الشهر' : 'لم يُحدَّد بعد') + '</p></div>';
     h += '<div class="card"><div class="row spread"><b>الفريق</b><button class="btn sm" data-a="user">+ مستخدم</button></div>' + Object.values(S.users).map(u => '<div class="sum"><span>' + esc(u.name) + ' · ' + C.ROLES[u.role] + (u.commission && u.commission.value > 0 ? ' · عمولة ' + (u.commission.type === 'pct' ? num(u.commission.value) + '%' : num(u.commission.value) + ' د.ل') : '') + (u.active === false ? ' (موقوف)' : '') + '</span><button class="btn sm" data-a="user" data-id="' + u.id + '">تعديل</button></div>').join('') + '</div>';
   }
@@ -825,6 +833,16 @@ function helpSheet() {
     '<div class="row" style="margin-top:12px"><button class="btn pri" data-a="close">فهمت</button></div></div>';
   m.hidden = false;
 }
+
+function ratesModal() {
+  const rt = Object.assign({}, S.settings.rates || {}); if (!rt.USD && S.settings.rate) rt.USD = S.settings.rate;
+  modal('أسعار الصرف', '<p class="hint">اكتب كم دينارًا ليبيًا تساوي وحدة واحدة من كل عملة. اترك العملة فارغة إن كنت لا تتعامل بها.</p>' + Object.keys(C.CURRENCIES).filter(k => k !== 'LYD').map(k => '<label>' + C.CURRENCIES[k] + ' (' + k + ')<input name="r_' + k + '" inputmode="decimal" value="' + (rt[k] ? rt[k] / 1000 : '') + '"></label>').join(''), f => {
+    const v = fd(f), rates = {};
+    for (const k of Object.keys(C.CURRENCIES)) { if (k === 'LYD') continue; const x = String(v['r_' + k] || '').trim(); if (!x) continue; const m = C.toM(x); if (!(m > 0)) { toast('سعر غير صحيح: ' + C.CURRENCIES[k], 1); return false; } rates[k] = m; }
+    if (!rates.USD) { toast('سعر الدولار مطلوب لعرض المعادل في الأرقام', 1); return false; }
+    if (!commit('settings_set', { rates, rate: rates.USD })) return false;
+  });
+}
 // ---------- الأوامر والتشغيل ----------
 const A = {
   tab: t => { ui.tab = t.dataset.id; ui.custKey = ''; ui.gq = ''; render(); window.scrollTo(0, 0); },
@@ -850,7 +868,7 @@ const A = {
   editMat: t => matModal(t.dataset.id), editProd: t => prodModal(t.dataset.id), advProd: t => prodModalAdv(t.dataset.id || undefined), buy: t => buyModal(t.dataset.id), adj: t => adjModal(t.dataset.t, t.dataset.id), prod: t => produceModal(t.dataset.id),
   newExp: expModal, newWd: wdModal, user: t => userModal(t.dataset.id), goal: goalModal, bundle: t => bundleModal(t.dataset.id), helpSheet,
   newDebt: debtModal, debt: t => debtDetail(t.dataset.id), payDebt: t => debtPayModal(t.dataset.id),
-  rate: () => modal('سعر الصرف', '<label>دينار لكل 1 دولار<input name="r" inputmode="decimal" value="' + S.settings.rate / 1000 + '"></label>', f => { const r = C.toM(f.r.value); if (!(r > 0)) { toast('قيمة غير صحيحة', 1); return false; } if (!commit('settings_set', { rate: r })) return false; }),
+  rate: ratesModal,
   void: t => askConfirm('سيتم عكس أثر هذه العملية بالكامل. متأكد؟', () => commit('void', { target: t.dataset.id })),
   csv: t => { const v = C.views(S)[t.dataset.id]; if (v) download(t.dataset.id + '.csv', toCSV(v)); },
   backup: () => download('backup-' + today() + '.json', JSON.stringify(OPS.map(strip)), 'application/json')
@@ -866,6 +884,11 @@ document.addEventListener('change', e => {
     const list = JSON.parse(txt), have = new Set(OPS.map(o => o.id)), add = list.filter(o => o && o.id && o.type && o.p && !have.has(o.id));
     add.forEach(o => { o._s = 0; OPS.push(o); }); idbPut(add); recompute(); render(); scheduleSync(); toast('تمت استعادة ' + add.length + ' عملية');
   }).catch(() => toast('ملف غير صالح', 1));
+});
+document.addEventListener('change', e => {
+  if (e.target.name !== 'cur' || !e.target.form) return;
+  const f = e.target.form, rb = f.querySelector('.rb'); if (!rb) return;
+  const c = e.target.value; rb.style.display = c === 'LYD' ? 'none' : ''; if (f.rate) f.rate.value = rateOf(c);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });

@@ -10,6 +10,8 @@
   const MILLI = 1000;
   const VERSION = 1;
 
+  const CURRENCIES = { LYD: 'دينار ليبي', USD: 'دولار', EUR: 'يورو', AED: 'درهم إماراتي', SAR: 'ريال سعودي', TND: 'دينار تونسي', DZD: 'دينار جزائري', EGP: 'جنيه مصري' };
+  const PAY_METHODS = { cash: 'كاش', bank: 'تحويل مصرفي', pos: 'نقاط بيع (BOS)' };
   const ROLES = { owner: 'المالك', manager: 'مشرف', sales: 'مبيعات', warehouse: 'مخزن وتعبئة', accountant: 'محاسب', ads: 'مسؤول إعلانات' };
   const STATUS = { new: 'جديد', confirmed: 'مؤكد', shipped: 'مع المندوب', delivered: 'مستلم', rejected: 'مرفوض', cancelled: 'ملغي', returned: 'مرتجع' };
   const TRANSITIONS = { new: ['confirmed', 'shipped', 'cancelled'], confirmed: ['shipped', 'cancelled'], shipped: ['delivered', 'rejected'], delivered: ['returned'] };
@@ -61,7 +63,7 @@
   }
   function fromM(m) { return m / MILLI; }
   function toLyd(amt, currency, rate) {
-    return currency === 'USD' ? Math.round(amt * rate / MILLI) : amt;
+    return currency && currency !== 'LYD' ? Math.round(amt * rate / MILLI) : amt;
   }
   function toUsd(lyd, rate) { return rate > 0 ? lyd / rate : 0; }
   function fmtNum(m, max) {
@@ -311,7 +313,7 @@
         const o = S.orders[p.orderId];
         if (!o) return add('err', 'دفعة لطلب غير موجود');
         o.paid += p.amt;
-        S.payments.push({ id: op.id, date: d, orderId: o.id, code: o.code, amt: p.amt, method: p.method || '' });
+        S.payments.push({ id: op.id, date: d, orderId: o.id, code: o.code, amt: p.amt, method: p.method || '', cur: p.cur || 'LYD', orig: p.orig != null ? p.orig : p.amt });
         break;
       }
       case 'expense': {
@@ -412,7 +414,9 @@
     let e;
     switch (op.type) {
       case 'user_upsert': return !p.name ? 'اسم المستخدم مطلوب' : !ROLES[p.role] ? 'دور غير صحيح' : !p.hash ? 'الرمز السري مطلوب' : null;
-      case 'settings_set': return p.rate !== undefined && !(p.rate > 0) ? 'سعر الصرف يجب أن يكون أكبر من صفر' : null;
+      case 'settings_set':
+        if (p.rates) for (const k of Object.keys(p.rates)) if (!CURRENCIES[k] || !(p.rates[k] > 0)) return 'سعر صرف غير صحيح: ' + k;
+        return p.rate !== undefined && !(p.rate > 0) ? 'سعر الصرف يجب أن يكون أكبر من صفر' : null;
       case 'material_upsert': return !p.name ? 'اسم المادة مطلوب' : !UNITS[p.unit] ? 'وحدة غير صحيحة' : !MAT_CATS[p.cat] ? 'تصنيف غير صحيح' : null;
       case 'product_upsert':
         if (!p.name) return 'اسم المنتج مطلوب';
@@ -423,7 +427,7 @@
         if (p.paid !== undefined && p.paid !== null && !(p.paid >= 0 && p.paid <= p.amt)) return 'المبلغ المدفوع غير صحيح';
         if (!S.materials[p.materialId]) return 'اختر المادة';
         if ((e = pos(p.qty, 'الكمية')) || (e = pos(p.amt, 'المبلغ'))) return e;
-        return p.currency === 'USD' && !(p.rate > 0) ? 'سعر الصرف مطلوب' : null;
+        return p.currency && p.currency !== 'LYD' && (!CURRENCIES[p.currency] || !(p.rate > 0)) ? 'سعر الصرف مطلوب' : null;
       case 'production': {
         const pr = S.products[p.productId];
         if (!pr) return 'اختر المنتج';
@@ -478,12 +482,12 @@
         if (p.dir !== 'in' && p.dir !== 'out') return 'اختر اتجاه الدين';
         if (!String(p.party || '').trim()) return 'اكتب اسم الطرف';
         if ((e = pos(p.amt, 'المبلغ'))) return e;
-        return p.currency === 'USD' && !(p.rate > 0) ? 'سعر الصرف مطلوب' : null;
+        return p.currency && p.currency !== 'LYD' && (!CURRENCIES[p.currency] || !(p.rate > 0)) ? 'سعر الصرف مطلوب' : null;
       case 'debt_pay': {
         const db = S.debts[p.debtId];
         if (!db) return 'الدين غير موجود';
         if ((e = pos(p.amt, 'المبلغ'))) return e;
-        if (p.currency === 'USD' && !(p.rate > 0)) return 'سعر الصرف مطلوب';
+        if (p.currency && p.currency !== 'LYD' && (!CURRENCIES[p.currency] || !(p.rate > 0))) return 'سعر الصرف مطلوب';
         return toLyd(p.amt, p.currency, p.rate) > db.lyd - db.paid + 1 ? 'المبلغ أكبر من المتبقي (' + fmtNum(db.lyd - db.paid) + ')' : null;
       }
       case 'coupon_upsert': {
@@ -499,12 +503,12 @@
       case 'withdrawal':
         if (!WD_CATS[p.cat]) return 'اختر نوع المسحوب';
         if ((e = pos(p.amt, 'المبلغ'))) return e;
-        return p.currency === 'USD' && !(p.rate > 0) ? 'سعر الصرف مطلوب' : null;
+        return p.currency && p.currency !== 'LYD' && (!CURRENCIES[p.currency] || !(p.rate > 0)) ? 'سعر الصرف مطلوب' : null;
       case 'expense':
         if (!EXP_CATS[p.cat]) return 'اختر نوع المصروف';
         if (((S.users[op.by] || {}).role === 'ads') && AD_CATS.indexOf(p.cat) < 0) return 'مسؤول الإعلانات يسجّل مصروفات الإعلانات فقط';
         if ((e = pos(p.amt, 'المبلغ'))) return e;
-        return p.currency === 'USD' && !(p.rate > 0) ? 'سعر الصرف مطلوب' : null;
+        return p.currency && p.currency !== 'LYD' && (!CURRENCIES[p.currency] || !(p.rate > 0)) ? 'سعر الصرف مطلوب' : null;
       case 'gift': {
         const pr = S.products[p.productId];
         if (!pr) return 'اختر العطر';
@@ -633,5 +637,5 @@
     };
   }
 
-  return { VERSION, MILLI, MASTER, productionPayload, ROLES, STATUS, TRANSITIONS, EXP_CATS, WD_CATS, couponCheck, couponUses, normCode, giftRows, phoneKey, customers, customerRisk, lowStock, debtInfo, AD_CATS, MAT_CATS, UNITS, GIFT_KINDS, OP_TYPES, PERMS, can, canOp, uid, normDigits, toM, fromM, toLyd, toUsd, fmtNum, sha256, hashPin, reduce, validate, report, views, recipeCost, orderTotals, emptyState };
+  return { VERSION, MILLI, MASTER, productionPayload, ROLES, STATUS, TRANSITIONS, EXP_CATS, WD_CATS, CURRENCIES, PAY_METHODS, couponCheck, couponUses, normCode, giftRows, phoneKey, customers, customerRisk, lowStock, debtInfo, AD_CATS, MAT_CATS, UNITS, GIFT_KINDS, OP_TYPES, PERMS, can, canOp, uid, normDigits, toM, fromM, toLyd, toUsd, fmtNum, sha256, hashPin, reduce, validate, report, views, recipeCost, orderTotals, emptyState };
 });
