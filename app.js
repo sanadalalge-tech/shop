@@ -301,7 +301,7 @@ function campaignNames() { return [...new Set(Object.values(S.orders).map(o => o
 function lineHtml(pre) {
   pre = pre || {};
   const prods = Object.values(S.products).filter(p => p.active !== false);
-  return '<div class="line"' + (pre.bundle ? ' data-bundle="' + esc(pre.bundle) + '"' : '') + '><label>المنتج' + (pre.bundle ? ' <span class="pill">' + esc(pre.bundle) + '</span>' : '') + '<select name="pid"><option value="">اختر…</option>' + prods.map(p => '<option value="' + p.id + '" data-price="' + p.price / 1000 + '"' + (pre.productId === p.id ? ' selected' : '') + '>' + esc(p.name) + ' (' + p.stock + ')</option>').join('') + '</select></label><label>الكمية<input name="qty" inputmode="numeric" value="' + (pre.qty || 1) + '"></label><label>السعر<input name="price" inputmode="decimal" value="' + (pre.price != null ? pre.price / 1000 : '') + '"></label><button type="button" class="x" data-a="rmLine" aria-label="حذف">×</button><label class="gl"><input type="checkbox" name="gift">هدية (مجانًا، تُخصم من المخزون بسعر التكلفة)</label></div>';
+  return '<div class="line"' + (pre.bundle ? ' data-bundle="' + esc(pre.bundle) + '"' : '') + '><label>المنتج' + (pre.bundle ? ' <span class="pill">' + esc(pre.bundle) + '</span>' : '') + '<select name="pid"><option value="">اختر…</option>' + prods.map(p => '<option value="' + p.id + '" data-price="' + p.price / 1000 + '"' + (pre.productId === p.id ? ' selected' : '') + '>' + esc(p.name) + ' (' + p.stock + ')</option>').join('') + '</select></label><label>الكمية<input name="qty" inputmode="numeric" value="' + (pre.qty || 1) + '"></label><label>السعر<input name="price" inputmode="decimal"' + (pre.gift ? ' disabled' : '') + ' value="' + (pre.price != null ? pre.price / 1000 : '') + '"></label><button type="button" class="x" data-a="rmLine" aria-label="حذف">×</button><label class="gl"><input type="checkbox" name="gift"' + (pre.gift ? ' checked' : '') + '>هدية (مجانًا، تُخصم من المخزون بسعر التكلفة)</label></div>';
 }
 function formDiscount(f, items) {
   if (!f.discount) return { discount: 0, coupon: '', msg: '' };
@@ -351,11 +351,11 @@ function addBundle(id) {
   const box = $('#lines'); const first = $$('.line', box); if (first.length === 1 && !$('[name=pid]', first[0]).value) first[0].remove();
   lines.forEach(l => box.insertAdjacentHTML('beforeend', lineHtml(l))); calcOrderForm();
 }
-function newOrder() {
-  if (!C.can(role(), 'order_create')) return toast('لا تملك صلاحية إنشاء الطلبات', 1);
+function newOrder(ed) {
+  if (!ed && !C.can(role(), 'order_create')) return toast('لا تملك صلاحية إنشاء الطلبات', 1);
   if (!Object.keys(S.products).length) return toast('أضف منتجًا أولًا من المخزون', 1);
   const manual = C.can(role(), 'coupon_upsert'), bundles = Object.values(S.bundles).filter(b => b.active);
-  modal('طلب جديد', '<div class="sec"><h3>العميل</h3><div class="g2 keep"><label>الاسم<input name="name" autocomplete="off"></label><label>الهاتف<input name="phone" inputmode="tel" dir="ltr"></label></div><div id="rk"></div><div class="g2 keep"><label>هاتف ثانٍ<input name="phone2" inputmode="tel" dir="ltr"></label><label>المدينة<input name="city" list="cities"></label></div><datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist><div class="g2 keep"><label>المنطقة / الحي<input name="area"></label><label>العنوان / أقرب نقطة دالة<input name="address"></label></div></div>' +
+  modal(ed ? 'تعديل الطلب ' + ed.p.code : 'طلب جديد', '<div class="sec"><h3>العميل</h3><div class="g2 keep"><label>الاسم<input name="name" autocomplete="off"></label><label>الهاتف<input name="phone" inputmode="tel" dir="ltr"></label></div><div id="rk"></div><div class="g2 keep"><label>هاتف ثانٍ<input name="phone2" inputmode="tel" dir="ltr"></label><label>المدينة<input name="city" list="cities"></label></div><datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist><div class="g2 keep"><label>المنطقة / الحي<input name="area"></label><label>العنوان / أقرب نقطة دالة<input name="address"></label></div></div>' +
     '<div class="sec"><h3>المنتجات</h3><div id="lines">' + lineHtml() + '</div><div class="row"><button type="button" class="btn sm" data-a="addLine">+ منتج آخر</button>' + (bundles.length ? '<select id="bsel" style="width:auto;margin:0"><option value="">+ باقة…</option>' + bundles.map(b => '<option value="' + b.id + '">' + esc(b.name) + ' — ' + num(b.price) + '</option>').join('') + '</select>' : '') + '</div><small class="d" id="ogift" style="margin:6px 0"></small></div>' +
     (manual ? '<div class="sec"><h3>الخصم</h3><div class="g2 keep"><label>خصم يدوي<input name="discount" inputmode="decimal" value="0"></label><label>نوعه<select name="dkind"><option value="amt">مبلغ (د.ل)</option><option value="pct">نسبة %</option></select></label></div><small class="d" id="dmsg" style="margin:-4px 0 8px"></small></div>' : '') +
     '<div class="sec"><h3>التوصيل والدفع</h3><div class="g2 keep"><label>رسوم توصيل يدفعها العميل<input name="deliveryFee" inputmode="decimal" value="0"></label><label>تكلفة المندوب علينا<input name="courierCost" inputmode="decimal" value="0"></label></div><div class="g2 keep"><label>كود شركة التوصيل<input name="ccode" dir="ltr"></label><label>طريقة الدفع<select name="pay">' + opt(PAYS, 'cash') + '</select></label></div></div>' +
@@ -366,9 +366,10 @@ function newOrder() {
       if (items.some(i => !Number.isInteger(i.qty) || !(i.price >= 0))) { toast('تحقق من الكميات والأسعار', 1); return false; }
       const itemsT = items.reduce((t, i) => t + (i.gift ? 0 : i.qty * i.price), 0), dc = formDiscount(f, itemsT), d = dc.discount, df = fnum(v.deliveryFee, 0), cc = fnum(v.courierCost, 0);
       if ([d, df, cc].some(x => !Number.isFinite(x) || x < 0)) { toast('تحقق من الخصم والرسوم', 1); return false; }
-      const code = today().slice(5).replace('-', '') + '-' + C.uid().slice(0, 4).toUpperCase();
-      return !!commit('order_create', { id: C.uid(), code, customer: { name: v.name.trim(), phone: C.normDigits(v.phone), phone2: C.normDigits(v.phone2 || ''), city: v.city.trim(), area: (v.area || '').trim(), address: v.address.trim() }, items, discount: d, discountPct: dc.pct || 0, deliveryFee: df, courierCost: cc, courierCode: v.ccode.trim(), channel: v.channel, campaign: (v.campaign || '').trim(), payMethod: v.pay, note: v.note.trim() }) && undefined;
-    }, 'حفظ الطلب');
+      const code = ed ? ed.p.code : today().slice(5).replace('-', '') + '-' + C.uid().slice(0, 4).toUpperCase();
+      const pl = { id: ed ? ed.p.id : C.uid(), code, customer: { name: v.name.trim(), phone: C.normDigits(v.phone), phone2: C.normDigits(v.phone2 || ''), city: v.city.trim(), area: (v.area || '').trim(), address: v.address.trim() }, items, discount: d, discountPct: dc.pct || 0, deliveryFee: df, courierCost: cc, courierCode: v.ccode.trim(), channel: v.channel, campaign: (v.campaign || '').trim(), payMethod: v.pay, note: v.note.trim() };
+      return ed ? saveEdit(ed.id, pl, (f.odate && f.odate.value) || ed.date) : !!commit('order_create', pl)
+    }, ed ? 'حفظ التعديل' : 'حفظ الطلب');
   $('#modal .sheet').classList.add('full');
   const f = $('#mf');
   f.addEventListener('input', e => { calcOrderForm(); if (e.target.name === 'phone') checkRisk(); });
@@ -378,7 +379,16 @@ function newOrder() {
     if (e.target.id === 'bsel') { addBundle(e.target.value); e.target.value = ''; }
     calcOrderForm();
   });
+  if (ed) fillOrderForm(f, ed);
   calcOrderForm();
+}
+function fillOrderForm(f, ed) {
+  const p = ed.p, c = p.customer || {}, set = (n, v) => { if (f[n] && v != null) f[n].value = v; };
+  set('name', c.name); set('phone', c.phone); set('phone2', c.phone2); set('city', c.city); set('area', c.area); set('address', c.address);
+  $('#lines').innerHTML = p.items.map(lineHtml).join('');
+  if (f.discount) { if (p.discountPct) { set('discount', p.discountPct / 1000); set('dkind', 'pct'); } else set('discount', (p.discount || 0) / 1000); }
+  set('deliveryFee', (p.deliveryFee || 0) / 1000); set('courierCost', (p.courierCost || 0) / 1000); set('ccode', p.courierCode); set('pay', p.payMethod); set('channel', p.channel); set('campaign', p.campaign); set('note', p.note);
+  const dt = document.createElement('label'); dt.innerHTML = 'تاريخ الطلب<input name="odate" type="date" value="' + ed.date + '">'; $('#otot').closest('.sum').before(dt);
 }
 
 // ---------- تفاصيل الطلب ----------
@@ -404,8 +414,8 @@ function orderDetail(id) {
     '<div class="sum big"><span>الإجمالي</span><span>' + lyd(o.total) + ' <small class="d" dir="ltr">' + usdv(o.total) + '</small></span></div><div class="sum"><span>المدفوع</span><span>' + lyd(o.paid) + '</span></div><div class="sum"><span>المتبقي</span><span>' + lyd(o.total - o.paid) + '</span></div>' +
     (seesCost() && o.cogs ? '<div class="sum"><span>التكلفة</span><span>' + lyd(o.cogs) + '</span></div><div class="sum"><span>الربح المتوقع</span><span>' + lyd(o.total - o.cogs - o.courierCost) + '</span></div>' : '') +
     '<h3>تجهيز وإرسال</h3><div class="row"><button class="btn sm" data-a="delivery" data-id="' + o.id + '">تجهيز للتوصيل (نسخ)</button><button class="btn sm" data-a="bag" data-id="' + o.id + '">ورقة الكيس</button><button class="btn sm" data-a="wa" data-id="' + o.id + '">رسالة واتساب</button><button class="btn sm" data-a="print" data-id="' + o.id + '">فاتورة</button></div>' +
-    '<h3>السجل</h3>' + o.history.map(h => '<small class="d">' + h.date + ' — ' + C.STATUS[h.status] + ' — ' + esc((S.users[h.by] || {}).name || '') + (h.note ? ' (' + esc(h.note) + ')' : '') + '</small>').join('') +
-    '<div class="row" style="margin-top:14px">' + next.map(s => '<button class="btn ' + (s === 'rejected' || s === 'cancelled' || s === 'returned' ? 'red' : 'pri') + '" data-a="status" data-id="' + o.id + '" data-s="' + s + '">' + NEXT_LABEL[s] + '</button>').join('') +
+    (isOwner() ? '<div class="row"><button class="btn sm" data-a="editOrder" data-id="' + o.id + '">✎ تعديل الطلب</button>' + (o.history.length > 1 ? '<button class="btn sm red" data-a="rollback" data-id="' + o.id + '">↩ تراجع عن آخر حالة</button>' : '') + '</div>' : '') + '<h3>السجل</h3>' + o.history.map(h => '<small class="d">' + h.date + ' — ' + C.STATUS[h.status] + ' — ' + esc((S.users[h.by] || {}).name || '') + (h.note ? ' (' + esc(h.note) + ')' : '') + '</small>').join('') +
+    editLogHtml(S.editLog.filter(e => e.target === o.opId), 'تعديلات هذا الطلب') + '<div class="row" style="margin-top:14px">' + next.map(s => '<button class="btn ' + (s === 'rejected' || s === 'cancelled' || s === 'returned' ? 'red' : 'pri') + '" data-a="status" data-id="' + o.id + '" data-s="' + s + '">' + NEXT_LABEL[s] + '</button>').join('') +
     (C.can(role(), 'payment') && o.total - o.paid > 0 && o.status !== 'cancelled' && o.status !== 'rejected' ? '<button class="btn" data-a="pay" data-id="' + o.id + '">تسجيل دفعة</button>' : '') + '<button class="btn" data-a="close">إغلاق</button></div></div>';
   m.hidden = false;
 }
@@ -470,8 +480,8 @@ function printOrder(id) {
 }
 function pgStock() {
   const r = role(), cost = seesCost(), t = ui.stab, lowMap = {}; C.lowStock(S, today()).forEach(x => { lowMap[x.type + ':' + x.id] = x; });
-  let h = '<div class="row spread"><h2>المخزون</h2><div class="row">' + (C.can(r, 'material_upsert') ? '<button class="btn sm" data-a="editMat">+ مادة خام</button>' : '') + (C.can(r, 'product_upsert') ? '<button class="btn sm" data-a="editProd">+ منتج</button>' : '') + '</div></div>' +
-    '<div class="chips">' + [['mat', 'المواد الخام'], ['prod', 'المنتجات الجاهزة']].concat([['mov', 'الحركة']]).map(x => '<button class="chip ' + (t === x[0] ? 'on' : '') + '" data-a="stab" data-id="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>';
+  let h = '<div class="row spread"><h2>المخزون</h2><div class="row">' + (C.can(r, 'material_upsert') ? '<button class="btn sm" data-a="editMat">+ مادة خام</button>' : '') + (C.can(r, 'product_upsert') ? '<button class="btn sm" data-a="editProd">+ منتج</button>' : '') + (C.can(r, 'waste') ? '<button class="btn sm red" data-a="waste">تسجيل فاقد</button>' : '') + '</div></div>' +
+    '<div class="chips">' + [['mat', 'المواد الخام'], ['prod', 'المنتجات الجاهزة'], ['run', 'التعبئات'], ['waste', 'الفاقد'], ['mov', 'الحركة']].map(x => '<button class="chip ' + (t === x[0] ? 'on' : '') + '" data-a="stab" data-id="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>';
   if (t === 'mat') {
     const ms = Object.values(S.materials).filter(m => m.active !== false);
     h += ms.length ? '<div class="tw"><table><tr><th>المادة</th><th class="n">الرصيد</th>' + (cost ? '<th class="n">تكلفة/وحدة</th><th class="n">القيمة</th>' : '') + '<th></th></tr>' + ms.map(m => {
@@ -486,9 +496,13 @@ function pgStock() {
       const lwp = lowMap['product:' + p.id];
       return '<tr><td>' + esc(p.name) + '<small class="d">' + p.sizeMl + ' مل' + (lwp ? ' · <span class="low">' + lwp.why + '</span>' : '') + '</small></td><td class="n">' + num(p.price) + '</td>' + (cost ? '<td class="n">' + num(rc) + '</td><td class="n ' + (mg < 30 ? 'low' : '') + '">' + mg + '%</td>' : '') + '<td class="n">' + p.stock + '</td><td class="n">' + (C.can(r, 'production') && p.recipe.length ? '<button class="btn sm" data-a="prod" data-id="' + p.id + '">تعبئة</button> ' : '') + (C.can(r, 'adjust') ? '<button class="btn sm" data-a="adj" data-t="product" data-id="' + p.id + '">تسوية</button> ' : '') + (C.can(r, 'product_upsert') ? '<button class="btn sm" data-a="editProd" data-id="' + p.id + '">تعديل</button>' : '') + '</td></tr>';
     }).join('') + '</table></div>' : '<div class="empty">أضف منتجًا: اسم العطر والزيت وعدد الزجاجات من العبوة، والباقي يُحسب تلقائيًا</div>';
+  } else if (t === 'run') {
+    h += runTab(cost);
+  } else if (t === 'waste') {
+    h += wasteTab(cost);
   } else {
-    const mv = S.movements.slice().sort((a, b) => b.ts - a.ts).slice(0, 120), K = { purchase: 'شراء', consume: 'استهلاك', produce: 'إنتاج', ship: 'شحن', restock: 'إرجاع', adjust: 'تسوية', opening: 'رصيد افتتاحي', gift: 'هدية' };
-    h += mv.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>الحركة</th><th>الصنف</th><th class="n">الكمية</th>' + (cost ? '<th class="n">القيمة</th>' : '') + '</tr>' + mv.map(m => '<tr><td>' + m.date + '</td><td>' + K[m.kind] + '</td><td>' + esc(m.name) + '<small class="d">' + esc(m.note || '') + '</small></td><td class="n">' + (m.type === 'material' ? num(m.qty) : m.qty) + '</td>' + (cost ? '<td class="n">' + num(m.value) + '</td>' : '') + '</tr>').join('') + '</table></div>' : '<div class="empty">لا توجد حركات</div>';
+    const mv = S.movements.slice().sort((a, b) => b.ts - a.ts).slice(0, 120), K = { purchase: 'شراء', consume: 'استهلاك', produce: 'إنتاج', ship: 'شحن', restock: 'إرجاع', adjust: 'تسوية', opening: 'رصيد افتتاحي', gift: 'هدية', waste: 'فاقد' };
+    h += mv.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>الحركة</th><th>الصنف</th><th class="n">الكمية</th>' + (cost ? '<th class="n">القيمة</th>' : '') + '</tr>' + mv.map(m => '<tr><td>' + m.date + '</td><td>' + K[m.kind] + '</td><td>' + esc(m.name) + '<small class="d">' + esc(m.note || '') + '</small></td><td class="n">' + (m.type === 'material' ? num(m.qty) : m.qty) + '</td>' + (cost ? '<td class="n">' + num(m.value) + '</td>' : '') + '<td class="n">' + editBtn(m.op, '✎') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد حركات</div>';
   }
   return h;
 }
@@ -594,23 +608,92 @@ function prodModalAdv(id) {
   });
   $('#addR').onclick = () => { $('#lines').insertAdjacentHTML('beforeend', rl(null)); };
 }
-function produceModal(id) {
-  const p = S.products[id];
-  if (!p.recipe.length) return toast('هذا المنتج بلا تصنيع. أضف رصيده الجاهز من «تعديل».', 1);
+// ---------- التعبئة ----------
+const CONC = [5, 10, 15, 20, 25, 30, 35, 40];
+const wasteLine = (pre) => {
+  pre = pre || {};
+  const mats = Object.values(S.materials).filter(m => m.active !== false);
+  return '<div class="wline sec"><div class="g2 keep"><label>المادة<select name="wm">' + mats.map(m => '<option value="' + m.id + '"' + (pre.materialId === m.id ? ' selected' : '') + '>' + esc(m.name) + ' (' + C.UNITS[m.unit] + ')</option>').join('') + '</select></label><label>الكمية<input name="wq" inputmode="decimal" value="' + (pre.qty ? pre.qty / 1000 : '') + '"></label></div><div class="g2 keep"><label>السبب<select name="wr">' + opt(C.WASTE_REASONS, pre.reason || 'broke') + '</select></label><button type="button" class="btn sm red" data-a="rmWaste" style="align-self:end">حذف</button></div></div>';
+};
+function wasteFromForm(f) {
+  return $$('.wline', f).map(l => ({ materialId: $('[name=wm]', l).value, qty: C.toM($('[name=wq]', l).value), reason: $('[name=wr]', l).value })).filter(w => w.materialId && w.qty !== 0 && !(Number.isNaN(w.qty) && !$('[name=wq]', f).value));
+}
+function produceModal(id, ed) {
+  const p = S.products[id]; if (!p) return;
+  const base = ed ? ed.p.recipe : p.recipe, ep = ed ? ed.p : null;
+  if (!base.length) return toast('هذا المنتج بلا تصنيع. أضف رصيده الجاهز من «تعديل».', 1);
+  const cat = l => (S.materials[l.materialId] || {}).cat, oilI = base.findIndex(l => cat(l) === 'oil'), alcI = base.findIndex(l => cat(l) === 'alcohol');
+  const sizeM = (p.sizeMl || 0) * 1000, hasOil = oilI >= 0 && sizeM > 0;
+  const lastRun = S.production.filter(r => r.productId === id && r.oilMl).sort((a, b) => b.ts - a.ts)[0];
+  const oil0 = hasOil ? (ep && ep.oilMl) || (lastRun && lastRun.oilMl) || base[oilI].qty : 0;
+  const pct0 = hasOil ? Math.round(oil0 * 100 / sizeM * 1000) / 1000 : 0;
   const y = (p.oil && p.oil.yield) || 0;
-  modal('تعبئة: ' + p.name, (y ? '<div class="g2"><label>عبوات الزيت التي فتحتها<input name="c" inputmode="numeric" value="1"></label><label>عدد الزجاجات<input name="u" inputmode="numeric" value="' + y + '"></label></div><p class="hint">كل عبوة تعطي ' + y + ' زجاجات. عدّل عدد الزجاجات إن لم تُنهِ العبوة.</p>' : '<label>عدد الوحدات المعبّأة<input name="u" inputmode="numeric" value="1"></label>') + '<div id="need"></div><label>ملاحظة<input name="n"></label>', f => {
-    const u = Number(C.normDigits(f.u.value));
-    if (!commit('production', C.productionPayload(S, id, u, f.n.value))) return false;
-  }, 'تنفيذ التعبئة');
-  const f = $('#mf'), upd = () => {
-    const u = Number(C.normDigits(f.u.value)) || 0;
-    $('#need').innerHTML = '<h3>سيُخصم من المخزون</h3>' + p.recipe.map(l => {
-      const m = S.materials[l.materialId] || { name: '؟', qty: 0, unit: 'pcs' }, need = l.qty * u, ok = m.qty >= need;
-      return '<div class="sum"><span>' + esc(m.name) + '</span><span class="' + (ok ? '' : 'low') + '">' + qty(need, m.unit) + ' <small class="d">(المتاح ' + num(m.qty) + ')</small></span></div>';
-    }).join('');
+  const conc = hasOil ? '<div class="sec"><h3>نسبة التركيز</h3><div class="chips" id="cchips">' + CONC.map(c => '<button type="button" class="chip" data-a="conc" data-id="' + c + '">' + c + '%</button>').join('') + '</div><div class="g2 keep"><label>النسبة %<input name="pct" inputmode="decimal" value="' + pct0 + '"></label><label>الزيت للزجاجة (مل)<input name="oil" inputmode="decimal" value="' + oil0 / 1000 + '"></label></div><small class="d" id="alcmsg"></small>' + (lastRun || ep ? '<small class="d">القيمة المقترحة من آخر تعبئة لهذا العطر، وتقدر تغيّرها بحرية.</small>' : '') + '</div>' : '';
+  modal((ed ? 'تعديل تعبئة: ' : 'تعبئة: ') + p.name,
+    '<label>عدد الزجاجات المعبّأة<input name="u" inputmode="numeric" value="' + (ep ? ep.units : y || 1) + '"></label>' + conc +
+    '<div class="sec"><h3>الوقت والخلطة</h3><div class="g2 keep"><label>وقت التعبئة (دقيقة)<input name="time" inputmode="numeric" value="' + (ep && ep.time ? ep.time : '') + '"></label><label>اسم الخلطة / رقم الدفعة<input name="batch" value="' + esc(ep ? ep.batch || '' : 'B-' + today().replace(/-/g, '').slice(2) + '-' + (S.production.filter(r => r.date === today()).length + 1)) + '"></label></div><label>ملاحظة (مكان التخزين، مدة التعتيق…)<input name="n" value="' + esc(ep ? ep.note || '' : '') + '"></label></div>' +
+    '<div class="sec"><h3>الفاقد أثناء التعبئة</h3><div id="wlines">' + (ep && ep.waste ? ep.waste.map(wasteLine).join('') : '') + '</div><button type="button" class="btn sm" data-a="addWaste">+ تسجيل فاقد (زجاج انكسر، خلطة انسكبت، ستيكر تمزق…)</button><p class="hint">تكلفة الفاقد تُضاف تلقائيًا إلى تكلفة الزجاجة، وتظهر في تقرير الفاقد.</p></div><div id="need"></div>',
+    f => {
+      const pl = payload(f); if (!pl) return false;
+      return ed ? saveEdit(ed.id, pl, ed.date) : !!commit('production', pl);
+    }, ed ? 'حفظ التعديل' : 'تنفيذ التعبئة');
+  const f = $('#mf');
+  const rec = (oilM) => base.map((l, i) => i === oilI && hasOil ? { materialId: l.materialId, qty: oilM } : i === alcI && hasOil ? { materialId: l.materialId, qty: Math.max(0, sizeM - oilM) } : { materialId: l.materialId, qty: l.qty });
+  const cur = () => { const oilM = hasOil ? C.toM(f.oil.value) : 0; return { u: Number(C.normDigits(f.u.value)) || 0, oilM, pctM: hasOil ? C.toM(f.pct.value) : 0 }; };
+  function payload(f) {
+    const c = cur(), time = Number(C.normDigits(f.time.value)) || 0, waste = $$('.wline', f).map(l => ({ materialId: $('[name=wm]', l).value, qty: C.toM($('[name=wq]', l).value), reason: $('[name=wr]', l).value }));
+    if (!Number.isInteger(c.u) || c.u <= 0) { toast('عدد الزجاجات غير صحيح', 1); return null; }
+    if (hasOil && (!(c.oilM > 0) || c.oilM >= sizeM)) { toast('كمية الزيت يجب أن تكون أكبر من صفر وأقل من حجم الزجاجة', 1); return null; }
+    if (waste.some(w => !(w.qty > 0))) { toast('أدخل كمية صحيحة لكل بند فاقد أو احذفه', 1); return null; }
+    return C.productionPayload(S, id, c.u, f.n.value.trim(), { recipe: rec(c.oilM), pct: hasOil ? Math.round(c.oilM * 100 / sizeM * 1000) : 0, oilMl: c.oilM, time, batch: f.batch.value.trim(), waste });
+  }
+  const upd = () => {
+    const c = cur(), waste = $$('.wline', f).map(l => ({ materialId: $('[name=wm]', l).value, qty: C.toM($('[name=wq]', l).value) || 0 })), r = rec(c.oilM), need = {};
+    r.forEach(l => { need[l.materialId] = (need[l.materialId] || 0) + l.qty * c.u; }); waste.forEach(w => { need[w.materialId] = (need[w.materialId] || 0) + w.qty; });
+    let cost = 0; const unitC = m => m.qty > 0 ? m.value / m.qty : (m.lastUnit || 0);
+    r.forEach(l => { const m = S.materials[l.materialId]; if (m) cost += unitC(m) * l.qty * c.u; }); waste.forEach(w => { const m = S.materials[w.materialId]; if (m) cost += unitC(m) * w.qty; });
+    const wc = waste.reduce((a, w) => a + (S.materials[w.materialId] ? unitC(S.materials[w.materialId]) * w.qty : 0), 0);
+    $('#need').innerHTML = '<h3>سيُخصم من المخزون</h3>' + Object.keys(need).map(mid => {
+      const m = S.materials[mid] || { name: '؟', qty: 0, unit: 'pcs' }, avail = m.qty + (ed ? 0 : 0), ok = avail >= need[mid];
+      return '<div class="sum"><span>' + esc(m.name) + '</span><span class="' + (ok ? '' : 'low') + '">' + qty(need[mid], m.unit) + ' <small class="d">(المتاح ' + num(m.qty) + ')</small></span></div>';
+    }).join('') + (seesCost() && c.u ? '<div class="sum big"><span>تكلفة الزجاجة التقريبية</span><span>' + lyd(Math.round(cost / c.u)) + '</span></div>' + (wc ? '<small class="d">منها فاقد ' + lyd(Math.round(wc / c.u)) + ' للزجاجة</small>' : '') : '');
+    if (hasOil) { $('#alcmsg').innerHTML = 'الكحول (الباقي): <b>' + num(Math.max(0, sizeM - c.oilM)) + '</b> مل من ' + (p.sizeMl) + ' مل'; $$('#cchips .chip').forEach(b => b.classList.toggle('on', Math.abs(Number(b.dataset.id) * 1000 - c.pctM) < 1)); }
   };
-  if (f.c) f.c.oninput = () => { f.u.value = (Number(C.normDigits(f.c.value)) || 0) * y; upd(); };
-  f.u.oninput = upd; upd();
+  f.addEventListener('input', e => {
+    if (hasOil && e.target.name === 'pct') { const v = Number(C.normDigits(f.pct.value)); if (v > 0) f.oil.value = Math.round(sizeM * v / 100) / 1000; }
+    if (hasOil && e.target.name === 'oil') { const v = Number(C.normDigits(f.oil.value)); if (v > 0) f.pct.value = Math.round(v * 1000 * 100 / sizeM * 1000) / 1000; }
+    upd();
+  });
+  f.addEventListener('change', upd);
+  f.addEventListener('click', e => {
+    const b = e.target.closest('[data-a=conc]'), w = e.target.closest('[data-a=addWaste],[data-a=rmWaste]');
+    if (b) { f.pct.value = b.dataset.id; f.oil.value = Math.round(sizeM * Number(b.dataset.id) / 100) / 1000; upd(); }
+    if (w) setTimeout(upd, 0);
+  });
+  upd();
+}
+
+// ---------- تسجيل فاقد مستقل ----------
+function wasteModal(preTarget, preId) {
+  if (!C.can(role(), 'waste')) return toast('لا تملك صلاحية تسجيل الفاقد', 1);
+  const mats = Object.values(S.materials).filter(m => m.active !== false), prods = Object.values(S.products).filter(p => p.active !== false), pre = preTarget ? preTarget + ':' + preId : '';
+  modal('تسجيل فاقد', '<label>الصنف<select name="it">' + '<optgroup label="مواد خام">' + mats.map(m => '<option value="material:' + m.id + '"' + (pre === 'material:' + m.id ? ' selected' : '') + '>' + esc(m.name) + ' — المتاح ' + num(m.qty) + ' ' + C.UNITS[m.unit] + '</option>').join('') + '</optgroup><optgroup label="منتجات جاهزة">' + prods.map(m => '<option value="product:' + m.id + '"' + (pre === 'product:' + m.id ? ' selected' : '') + '>' + esc(m.name) + ' — المتاح ' + m.stock + '</option>').join('') + '</optgroup></select></label>' +
+    '<div class="g2 keep"><label>الكمية (مل / جرام / قطعة)<input name="q" inputmode="decimal"></label><label>السبب<select name="r">' + opt(C.WASTE_REASONS, 'broke') + '</select></label></div><label>ملاحظة<input name="n"></label><label>التاريخ<input name="date" type="date" value="' + today() + '"></label><p class="hint">يُخصم من المخزون بتكلفته ويُحسب خسارة في تقرير الأرباح.</p>', f => {
+    const v = fd(f), [target, id] = v.it.split(':'), q = target === 'material' ? C.toM(v.q) : Number(C.normDigits(v.q));
+    if (!commit('waste', { target, id, qty: q, reason: v.r, note: v.n.trim() }, v.date || today())) return false;
+  }, 'تسجيل الفاقد');
+}
+function wasteTab(cost) {
+  const [f, t] = range(ui.period), inR = d => (!f || d >= f) && (!t || d <= t);
+  const list = S.waste.filter(w => inR(w.date)).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.ts - a.ts));
+  const tot = list.reduce((a, w) => a + w.cost, 0), alone = list.filter(w => w.src !== 'production').reduce((a, w) => a + w.cost, 0);
+  return periodChips() + (cost ? '<div class="kpis">' + kpi('إجمالي الفاقد', lyd(tot), '', tot ? 'neg' : '') + kpi('فاقد مستقل (خسارة)', lyd(alone), '', alone ? 'neg' : '') + '</div>' : '') +
+    (list.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>الصنف</th><th class="n">الكمية</th>' + (cost ? '<th class="n">التكلفة</th>' : '') + '<th></th></tr>' + list.map(w => '<tr><td>' + w.date + '</td><td>' + esc(w.name) + '<small class="d">' + C.WASTE_REASONS[w.reason] + ' · ' + (w.src === 'production' ? 'داخل التعبئة' : 'مستقل') + (w.note ? ' · ' + esc(w.note) : '') + '</small></td><td class="n">' + (w.target === 'material' ? qty(w.qty, w.unit) : w.qty) + '</td>' + (cost ? '<td class="n">' + num(w.cost) + '</td>' : '') + '<td class="n">' + editBtn(w.op, '✎') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا يوجد فاقد في هذه الفترة</div>') +
+    help('الفاقد داخل التعبئة يُضاف إلى تكلفة الزجاجة. الفاقد المستقل يُخصم من صافي الربح كخسارة.');
+}
+function runTab(cost) {
+  const list = S.production.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.ts - a.ts)).slice(0, 80);
+  return list.length ? list.map(r => '<div class="card"><div class="row spread"><b>' + esc(r.name) + ' × ' + r.units + '</b><small class="d">' + r.date + '</small></div><small class="d">' + [r.pct ? 'تركيز ' + num(r.pct) + '%' : '', r.oilMl ? 'زيت ' + num(r.oilMl) + ' مل/زجاجة' : '', r.time ? r.time + ' دقيقة' : '', r.batch ? 'خلطة ' + esc(r.batch) : '', cost ? 'تكلفة الزجاجة ' + num(r.unitCost) + (r.wasteCost ? ' (فاقد ' + num(r.wasteCost) + ')' : '') : ''].filter(Boolean).join(' · ') + (r.note ? '<br>' + esc(r.note) : '') + '</small><div class="row" style="margin-top:6px">' + editBtn(r.id) + '</div></div>').join('') : '<div class="empty">لا توجد تعبئات مسجلة بعد</div>';
 }
 
 // ---------- المصروفات ----------
@@ -626,7 +709,7 @@ function pgExp() {
     return backBar('المصروفات والمسحوبات') + tabs + periodChips() + '<div class="row spread"><span></span>' + (C.can(r, 'withdrawal') ? '<button class="btn pri" data-a="newWd">+ مسحوب شخصي</button>' : '') + '</div>' +
       '<div class="kpis">' + kpi('إجمالي المسحوبات', lyd(tot), usdv(tot), 'gold') + '</div>' +
       (list.length ? '<h3>حسب النوع</h3><div class="tw"><table>' + Object.keys(by).sort((a, b) => by[b] - by[a]).map(c => '<tr><td>' + C.WD_CATS[c] + '</td><td class="n">' + num(by[c]) + '</td></tr>').join('') + '</table></div>' +
-        '<h3>السجل</h3><div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th></tr>' + list.map(w => '<tr><td>' + w.date + '</td><td>' + C.WD_CATS[w.cat] + '<small class="d">' + esc(w.note || '') + '</small></td><td class="n">' + num(w.lyd) + (w.cur && w.cur !== 'LYD' ? '<small class="d">' + num(w.orig) + ' ' + w.cur + '</small>' : '') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مسحوبات في هذه الفترة</div>') +
+        '<h3>السجل</h3><div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th><th></th></tr>' + list.map(w => '<tr><td>' + w.date + '</td><td>' + C.WD_CATS[w.cat] + '<small class="d">' + esc(w.note || '') + '</small></td><td class="n">' + num(w.lyd) + (w.cur && w.cur !== 'LYD' ? '<small class="d">' + num(w.orig) + ' ' + w.cur + '</small>' : '') + '</td><td class="n">' + editBtn(w.op, '✎') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مسحوبات في هذه الفترة</div>') +
       help('<b>المسحوبات الشخصية</b> تخرج من أموال المشروع لكنها لا تُحسب مصروفًا على البراند ولا تنقص صافي ربحه. تظهر في التقارير بسطر مستقل: صافي الربح ← المسحوبات ← المتبقي.');
   }
   let list = S.expenses.filter(e => inR(e.date)).sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -634,7 +717,7 @@ function pgExp() {
   const adSum = list.filter(e => C.AD_CATS.includes(e.cat)).reduce((a, e) => a + e.lyd, 0), tot = list.reduce((a, e) => a + e.lyd, 0);
   return backBar('المصروفات والمسحوبات') + tabs + periodChips() + '<div class="row spread"><span></span>' + (C.can(r, 'expense') ? '<button class="btn pri" data-a="newExp">+ مصروف</button>' : '') + '</div>' +
     '<div class="kpis">' + kpi('الإجمالي', lyd(tot), usdv(tot), 'gold') + kpi('إعلانات ومشاهير', lyd(adSum), usdv(adSum)) + '</div>' +
-    (list.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th></tr>' + list.map(e => '<tr><td>' + e.date + '</td><td>' + C.EXP_CATS[e.cat] + '<small class="d">' + esc(e.campaign ? 'حملة: ' + e.campaign + (e.note ? ' · ' : '') : '') + esc(e.note || '') + (e.auto ? ' · تلقائي' : '') + '</small></td><td class="n">' + num(e.lyd) + (e.cur && e.cur !== 'LYD' ? '<small class="d">' + num(e.orig) + ' ' + e.cur + '</small>' : '') + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مصروفات في هذه الفترة</div>') +
+    (list.length ? '<div class="tw"><table><tr><th>التاريخ</th><th>النوع</th><th class="n">المبلغ</th><th></th></tr>' + list.map(e => '<tr><td>' + e.date + '</td><td>' + C.EXP_CATS[e.cat] + '<small class="d">' + esc(e.campaign ? 'حملة: ' + e.campaign + (e.note ? ' · ' : '') : '') + esc(e.note || '') + (e.auto ? ' · تلقائي' : '') + '</small></td><td class="n">' + num(e.lyd) + (e.cur && e.cur !== 'LYD' ? '<small class="d">' + num(e.orig) + ' ' + e.cur + '</small>' : '') + '</td><td class="n">' + (e.auto ? '' : editBtn(e.op, '✎')) + '</td></tr>').join('') + '</table></div>' : '<div class="empty">لا توجد مصروفات في هذه الفترة</div>') +
     help('شراء المواد الخام والتغليف يُسجَّل من «المخزون» ويدخل التكلفة عند التعبئة والبيع، فلا يُسجَّل هنا. الهدايا تُسجَّل داخل الطلب.');
 }
 const curOpts = sel => Object.keys(C.CURRENCIES).map(k => '<option value="' + k + '"' + (k === (sel || 'LYD') ? ' selected' : '') + '>' + C.CURRENCIES[k] + '</option>').join('');
@@ -670,11 +753,12 @@ function pgRep() {
   const [f, t] = range(ui.period), x = C.report(S, f, t), row = (l, v, b) => '<div class="sum' + (b ? ' big' : '') + '"><span>' + l + '</span><span>' + lyd(v) + ' <small class="d" dir="ltr">' + usdv(v) + '</small></span></div>';
   const own = r === 'owner' || r === 'accountant';
   let h = backBar('التقارير') + periodChips() + '<div class="card"><h3 style="margin-top:0">الأرباح والخسائر</h3>' + row('الإيراد (طلبات مستلمة)', x.revenue) + row('تكلفة البضاعة المباعة', -x.cogsSold) + (x.giftLinesCost ? row('هدايا ضمن الطلبات', -x.giftLinesCost) : '') + row('مجمل الربح', x.gross, 1) +
-    Object.keys(x.byCat).map(c => row(C.EXP_CATS[c], -x.byCat[c])).join('') + (x.shrink ? row('فاقد وتسويات', -x.shrink) : '') + row('صافي ربح البراند', x.net, 1) +
+    Object.keys(x.byCat).map(c => row(C.EXP_CATS[c], -x.byCat[c])).join('') + (x.shrink ? row('تسويات وجرد', -x.shrink) : '') + (x.wasteLoss ? row('فاقد مستقل (كسر/انسكاب…)', -x.wasteLoss) : '') + row('صافي ربح البراند', x.net, 1) +
     (own ? row('مسحوباتي الشخصية', -x.wdTotal) + row('المتبقي في المشروع', x.remainder, 1) : '') + '</div>';
   if (own && x.wdTotal) h += '<div class="card"><div class="sum"><span>كل ما خرج من المشروع (مصروفات + مسحوبات)</span><span>' + lyd(x.outAll) + '</span></div></div>';
   h += '<div class="kpis">' + kpi('طلبات جديدة', x.created) + kpi('مستلمة', x.delivered) + kpi('نسبة الرفض', Math.round(x.rejectRate * 100) + '%', x.rejected + ' مرفوض', x.rejectRate > .3 ? 'neg' : '') + kpi('متوسط الطلب', x.delivered ? lyd(x.avgOrder) : '—') + '</div>';
   if (x.discountTotal || x.giftCost) h += '<div class="card"><h3 style="margin-top:0">الخصومات والهدايا</h3>' + (x.discountTotal ? '<div class="sum"><span>خصومات مُعطاة (' + x.discountOrders + ' طلب)</span><span>' + lyd(x.discountTotal) + '</span></div>' : '') + (x.giftCost ? '<div class="sum"><span>هدايا (' + x.giftCount + ' زجاجة، بسعر التكلفة)</span><span>' + lyd(x.giftCost) + '</span></div>' : '') + '<small class="d">الخصومات مخصومة أصلًا من الإيراد، والهدايا داخل التكلفة، فتُعرض للمعرفة فقط.</small></div>';
+  if (x.wasteTotal) h += '<h3>الفاقد حسب السبب</h3><div class="tw"><table><tr><th>السبب</th><th class="n">مرات</th><th class="n">التكلفة</th></tr>' + x.wasteByReason.map(w => '<tr><td>' + C.WASTE_REASONS[w.reason] + '</td><td class="n">' + w.n + '</td><td class="n">' + num(w.cost) + (w.prod ? '<small class="d">منها ' + num(w.prod) + ' داخل تكلفة الزجاجة</small>' : '') + '</td></tr>').join('') + '</table></div>';
   const gr = C.giftRows(S).filter(g => (!f || g.date >= f) && (!t || g.date <= t));
   if (gr.length) { const by = {}; gr.forEach(g => { const b = by[g.to] || (by[g.to] = { to: g.to, n: 0, cost: 0 }); b.n += g.qty; b.cost += g.cost; }); h += '<h3>الهدايا حسب المستلم</h3><div class="tw"><table>' + Object.values(by).sort((a, b) => b.cost - a.cost).map(b => '<tr><td>' + esc(b.to) + '</td><td class="n">' + b.n + '</td><td class="n">' + num(b.cost) + '</td></tr>').join('') + '</table></div>'; }
   h += '<h3>كفاءة الإعلانات</h3><div class="card"><div class="sum"><span>الإنفاق الإعلاني</span><span>' + lyd(x.adSpend) + '</span></div><div class="sum"><span>تكلفة الطلب الجديد</span><span>' + (x.created ? lyd(x.costPerOrder) : '—') + '</span></div><div class="sum"><span>تكلفة الطلب المستلم</span><span>' + (x.delivered ? lyd(x.costPerDelivered) : '—') + '</span></div><div class="sum"><span>العائد على الإعلان</span><span>' + (x.adSpend ? x.roas.toFixed(2) + '×' : '—') + '</span></div></div>';
@@ -743,8 +827,8 @@ function debtDetail(id) {
   m.innerHTML = '<div class="sheet"><div class="row spread"><h2>' + esc(d.party) + '</h2><span class="pill">' + (d.dir === 'in' ? 'لنا' : 'علينا') + '</span></div>' +
     '<div class="sum"><span>الإجمالي</span><span>' + lyd(d.lyd) + '</span></div><div class="sum"><span>المسدَّد</span><span>' + lyd(d.paid) + '</span></div><div class="sum big"><span>المتبقي</span><span>' + lyd(rem) + '</span></div>' +
     '<small class="d">' + (DEBT_KINDS[d.kind] || '') + ' · ' + d.date + (d.due ? ' · استحقاق ' + d.due : '') + (d.note ? ' · ' + esc(d.note) : '') + '</small>' +
-    (d.payments.length ? '<h3>الدفعات</h3>' + d.payments.map(p => '<div class="sum"><span>' + p.date + (p.note ? ' · ' + esc(p.note) : '') + '</span><span>' + lyd(p.lyd) + '</span></div>').join('') : '') +
-    '<div class="row" style="margin-top:14px">' + (rem > 0 && C.can(role(), 'debt_pay') ? '<button class="btn pri" data-a="payDebt" data-id="' + d.id + '">تسجيل دفعة</button>' : '') + '<button class="btn" data-a="close">إغلاق</button></div></div>';
+    (d.payments.length ? '<h3>الدفعات</h3>' + d.payments.map(p => '<div class="sum"><span>' + p.date + (p.note ? ' · ' + esc(p.note) : '') + '</span><span>' + lyd(p.lyd) + ' ' + editBtn(p.id, '✎') + '</span></div>').join('') : '') +
+    '<div class="row" style="margin-top:14px">' + (rem > 0 && C.can(role(), 'debt_pay') ? '<button class="btn pri" data-a="payDebt" data-id="' + d.id + '">تسجيل دفعة</button>' : '') + (d.opId && !d.auto ? editBtn(d.opId, '✎ تعديل الدين') : '') + '<button class="btn" data-a="close">إغلاق</button></div></div>';
   m.hidden = false;
 }
 function debtPayModal(id) {
@@ -770,8 +854,9 @@ function pgSet() {
     h += '<div class="card"><div class="row spread"><b>الباقات</b><button class="btn sm" data-a="bundle">+ باقة</button></div><p class="hint">عطران أو أكثر بسعر واحد. تظهر في شاشة «طلب جديد».</p>' + (bs.length ? bs.map(b => '<div class="sum"><span>' + esc(b.name) + ' · ' + num(b.price) + ' د.ل' + (b.active ? '' : ' (موقوفة)') + '<small class="d">' + b.items.map(i => esc((S.products[i.productId] || {}).name || '؟') + '×' + i.qty).join('، ') + '</small></span><button class="btn sm" data-a="bundle" data-id="' + b.id + '">تعديل</button></div>').join('') : '') + '</div>';
   }
   if (cost) {
-    const log = OPS.filter(o => o.type !== 'void' && !S.voided.has(o.id) && !['user_upsert', 'settings_set'].includes(o.type)).sort((a, b) => b.ts - a.ts).slice(0, 30);
-    h += '<div class="card"><b>آخر العمليات</b><p class="hint">إلغاء عملية يعكس أثرها بالكامل ويبقى سجلها محفوظًا.</p>' + log.map(o => '<div class="sum"><span>' + esc(describe(o)) + '</span>' + (C.can(r, 'void') ? '<button class="btn sm red" data-a="void" data-id="' + o.id + '">إلغاء</button>' : '') + '</div>').join('') + '</div>';
+    const log = OPS.filter(o => o.type !== 'void' && o.type !== 'edit' && !S.voided.has(o.id) && !['user_upsert', 'settings_set'].includes(o.type)).sort((a, b) => b.ts - a.ts).slice(0, 60);
+    h += '<div class="card"><b>آخر العمليات</b><p class="hint">إلغاء عملية يعكس أثرها بالكامل ويبقى سجلها محفوظًا.</p>' + log.map(o => '<div class="sum"><span>' + esc(describe(o)) + (S.editLog.some(e => e.target === o.id) ? ' <span class="pill">معدَّل</span>' : '') + '</span>' + editBtn(o.id, '✎') + (C.can(r, 'void') ? '<button class="btn sm red" data-a="void" data-id="' + o.id + '">إلغاء</button>' : '') + '</div>').join('') + '</div>';
+    if (own) h += editLogHtml(S.editLog.slice(0, 40));
     h += '<div class="card"><b>نسخة احتياطية</b><div class="row" style="margin-top:8px"><button class="btn" data-a="backup">تنزيل نسخة</button>' + (own ? '<label class="btn" style="margin:0">استعادة<input type="file" id="restore" accept=".json" hidden></label>' : '') + '</div></div>';
   }
   const rej = OPS.filter(o => o._r);
@@ -784,7 +869,7 @@ function describe(o) {
     user_upsert: 'مستخدم: ' + p.name, settings_set: 'إعدادات', material_upsert: 'مادة: ' + p.name, product_upsert: 'منتج: ' + p.name, purchase: 'شراء ' + ((S.materials[p.materialId] || {}).name || ''), gift: 'هدية ' + p.qty + '× ' + pn(p.productId) + ' إلى ' + p.to,
     production: 'تعبئة ' + p.units + ' × ' + pn(p.productId), order_create: 'طلب ' + p.code, order_edit: 'تعديل طلب ' + ((S.orders[p.orderId] || {}).code || ''), order_status: 'حالة ' + ((S.orders[p.orderId] || {}).code || '') + ' ← ' + C.STATUS[p.status],
     payment: 'دفعة ' + num(p.amt), expense: 'مصروف ' + C.EXP_CATS[p.cat] + ' ' + num(p.amt), withdrawal: 'مسحوب ' + C.WD_CATS[p.cat] + ' ' + num(p.amt), coupon_upsert: 'كود خصم ' + p.code, bundle_upsert: 'باقة: ' + p.name,
-    debt_add: 'دين: ' + p.party + ' ' + num(p.amt), debt_pay: 'دفعة دين ' + ((S.debts[p.debtId] || {}).party || '') + ' ' + num(p.amt), adjust: 'تسوية: ' + (p.reason || ''), void: 'إلغاء عملية'
+    debt_add: 'دين: ' + p.party + ' ' + num(p.amt), debt_pay: 'دفعة دين ' + ((S.debts[p.debtId] || {}).party || '') + ' ' + num(p.amt), adjust: 'تسوية: ' + (p.reason || ''), waste: 'فاقد ' + ((S.materials[p.id] || S.products[p.id] || {}).name || '') + ' (' + (C.WASTE_REASONS[p.reason] || '') + ')', edit: 'تعديل عملية', void: 'إلغاء عملية'
   }[o.type] || o.type;
   return o.date + ' · ' + t + ' · ' + u;
 }
@@ -843,6 +928,146 @@ function ratesModal() {
     if (!commit('settings_set', { rates, rate: rates.USD })) return false;
   });
 }
+// ---------- تعديل أي سجل (للمالك فقط) مع سجل قبل/بعد وأثر التعديل ----------
+const isOwner = () => role() === 'owner';
+const editBtn = (opId, label) => isOwner() && opId ? '<button class="btn sm" data-a="edit" data-id="' + opId + '">' + (label || '✎ تعديل') + '</button>' : '';
+function opNow(id) {
+  const op = OPS.find(o => o.id === id); if (!op) return null;
+  const log = S.editLog.filter(e => e.target === id), last = log[log.length - 1];
+  return last ? { type: op.type, p: last.after, date: last.afterDate, edited: log.length } : { type: op.type, p: op.p, date: op.date, edited: 0 };
+}
+
+// يحفظ التعديل بعد عرض أثره. يعيد false عندما يفتح شاشة التأكيد
+function saveEdit(opId, newP, date, note) {
+  if (!isOwner()) { toast('التعديل للمالك فقط', 1); return false; }
+  const t = OPS.find(o => o.id === opId); if (!t) { toast('العملية غير موجودة', 1); return false; }
+  const S0 = C.reduce(OPS.filter(o => o.id !== opId)), skip = /لا يكفي|أكبر من الرصيد|المخزون|الطلب غير موجود/;
+  if (t.type !== 'order_status' && t.type !== 'order_edit') {
+    const err = C.validate(S0, { type: t.type, p: newP, date, by: t.by });
+    if (err && !skip.test(err)) { toast(err, 1); return false; }
+  }
+  const im = C.editImpact(OPS, opId, newP, date, USER.id);
+  if (im.error) { toast(im.error, 1); return false; }
+  const dn = im.net[1] - im.net[0], dr = im.revenue[1] - im.revenue[0];
+  const unit = x => x.type === 'material' ? ' ' + C.UNITS[x.unit] : '';
+  const sf = x => x.type === 'material' ? num(x.before) + ' ← ' + num(x.after) : x.before + ' ← ' + x.after;
+  const doIt = () => { if (!commit('edit', { target: opId, p: newP, date, note: (note || '').trim() })) return false; toast('تم التعديل وسُجِّل في سجل التعديلات'); return true; };
+  if (!im.errors.length && !im.warns.length && !im.stock.length && !dn && !dr) return !!doIt();
+  const body = (im.errors.length ? '<div class="alert err"><b>تنبيه: التعديل يسبّب أخطاء</b><br>' + im.errors.map(esc).join('<br>') + '</div>' : '') +
+    (im.warns.length ? '<div class="alert warn">' + im.warns.map(esc).join('<br>') + '</div>' : '') +
+    (im.stock.length ? '<h3>أثره على المخزون</h3>' + im.stock.map(x => '<div class="sum"><span>' + esc(x.name) + '</span><span dir="ltr">' + sf(x) + unit(x) + '</span></div>').join('') : '') +
+    (seesCost() && (dn || dr) ? '<h3>أثره على الأرباح</h3>' + (dr ? '<div class="sum"><span>الإيراد</span><span>' + lyd(dr) + (dr > 0 ? ' +' : '') + '</span></div>' : '') + (dn ? '<div class="sum"><span>صافي الربح</span><span class="' + (dn >= 0 ? 'ok' : 'low') + '">' + lyd(dn) + '</span></div>' : '') : '') +
+    '<p class="hint">يُحفظ الأصل في سجل التعديلات ويمكن التراجع عن التعديل لاحقًا بإلغائه.</p>';
+  modal('أثر التعديل قبل الحفظ', body, () => doIt(), im.errors.length ? 'حفظ رغم التنبيه' : 'تأكيد التعديل');
+  return false;
+}
+
+const moneyEd = p => {
+  const cur = p.currency || p.cur || 'LYD', amt = p.orig != null && p.cur ? p.orig : p.amt;
+  return '<div class="g2 keep"><label>المبلغ<input name="amt" inputmode="decimal" value="' + amt / 1000 + '"></label><label>العملة<select name="cur">' + curOpts(cur) + '</select></label></div><label class="rb"' + (cur === 'LYD' ? ' style="display:none"' : '') + '>سعر الصرف (دينار ليبي مقابل وحدة واحدة)<input name="rate" inputmode="decimal" value="' + (p.rate ? p.rate / 1000 : rateOf(cur)) + '"></label>';
+};
+function moneyOut(v) {
+  const amt = C.toM(v.amt), rate = v.cur === 'LYD' ? 0 : C.toM(v.rate);
+  if (!(amt > 0)) { toast('المبلغ غير صحيح', 1); return null; }
+  if (v.cur !== 'LYD' && !(rate > 0)) { toast('سعر الصرف مطلوب', 1); return null; }
+  return { amt, currency: v.cur, rate };
+}
+function editForm(opId, title, body, build) {
+  const e = opNow(opId);
+  modal(title, body + '<div class="sec"><label>تاريخ العملية<input name="edate" type="date" value="' + e.date + '"></label><label>سبب التعديل (اختياري)<input name="enote"></label></div>', f => {
+    const v = fd(f), np = build(v, e.p, f); if (!np) return false;
+    return saveEdit(opId, np, v.edate || e.date, v.enote);
+  }, 'متابعة');
+}
+
+function editOp(id) {
+  if (!isOwner()) return toast('التعديل للمالك فقط', 1);
+  const op = OPS.find(o => o.id === id); if (!op) return toast('العملية غير موجودة', 1);
+  const e = opNow(id), p = e.p, T = op.type, mats = Object.values(S.materials), qn = m => m / 1000;
+  switch (T) {
+    case 'order_create': return newOrder({ id, p, date: e.date });
+    case 'production': return produceModal(p.productId, { id, p, date: e.date });
+    case 'expense': return editForm(id, 'تعديل مصروف', '<label>النوع<select name="cat">' + opt(C.EXP_CATS, p.cat) + '</select></label>' + moneyEd(p) + '<label>الحملة الإعلانية<input name="camp" list="camps" value="' + esc(p.campaign || '') + '"></label><datalist id="camps">' + campaignNames().map(n => '<option value="' + esc(n) + '">').join('') + '</datalist><label>تفاصيل<input name="note" value="' + esc(p.note || '') + '"></label>',
+      v => { const m = moneyOut(v); return m && Object.assign({}, p, m, { cat: v.cat, campaign: C.AD_CATS.includes(v.cat) ? v.camp.trim() : '', note: v.note.trim() }); });
+    case 'withdrawal': return editForm(id, 'تعديل مسحوب', '<label>النوع<select name="cat">' + opt(C.WD_CATS, p.cat) + '</select></label>' + moneyEd(p) + '<label>تفاصيل<input name="note" value="' + esc(p.note || '') + '"></label>',
+      v => { const m = moneyOut(v); return m && Object.assign({}, p, m, { cat: v.cat, note: v.note.trim() }); });
+    case 'debt_add': return editForm(id, 'تعديل دين', '<div class="g2 keep"><label>الاتجاه<select name="dir"><option value="in"' + (p.dir === 'in' ? ' selected' : '') + '>لنا عند طرف</option><option value="out"' + (p.dir === 'out' ? ' selected' : '') + '>علينا لطرف</option></select></label><label>النوع<select name="kind">' + opt(DEBT_KINDS, p.kind) + '</select></label></div><label>اسم الطرف<input name="party" value="' + esc(p.party || '') + '"></label>' + moneyEd(p) + '<label>تاريخ الاستحقاق<input name="due" type="date" value="' + (p.due || '') + '"></label><label>ملاحظة<input name="note" value="' + esc(p.note || '') + '"></label>',
+      v => { const m = moneyOut(v); return m && Object.assign({}, p, m, { dir: v.dir, kind: v.kind, party: v.party.trim(), due: v.due || '', note: v.note.trim() }); });
+    case 'debt_pay': return editForm(id, 'تعديل دفعة دين', moneyEd(p) + '<label>ملاحظة<input name="note" value="' + esc(p.note || '') + '"></label>',
+      v => { const m = moneyOut(v); return m && Object.assign({}, p, m, { note: v.note.trim() }); });
+    case 'payment': return editForm(id, 'تعديل دفعة طلب', moneyEd({ amt: p.amt, orig: p.orig, cur: p.cur, currency: p.cur, rate: p.rate }) + '<label>طريقة الدفع<select name="method">' + opt(PAYS, p.method) + '</select></label>',
+      v => { const m = moneyOut(v); return m && Object.assign({}, p, { amt: C.toLyd(m.amt, m.currency, m.rate), cur: m.currency, orig: m.amt, rate: m.rate, method: v.method }); });
+    case 'purchase': return editForm(id, 'تعديل شراء', '<label>الكمية<input name="qty" inputmode="decimal" value="' + qn(p.qty) + '"></label>' + moneyEd(p) + '<label>المورد<input name="sup" value="' + esc(p.supplier || '') + '"></label><div class="g2 keep"><label>المدفوع (فارغ = كامل المبلغ)<input name="paid" inputmode="decimal" value="' + (p.paid != null ? qn(p.paid) : '') + '"></label><label>موعد سداد الباقي<input name="due" type="date" value="' + (p.due || '') + '"></label></div>',
+      v => { const m = moneyOut(v), q = C.toM(v.qty); if (!m) return null; if (!(q > 0)) { toast('الكمية غير صحيحة', 1); return null; } const np = Object.assign({}, p, m, { qty: q, supplier: v.sup.trim() }); delete np.paid; delete np.due; if (v.paid.trim() !== '') { np.paid = C.toM(v.paid); if (np.paid < np.amt && v.due) np.due = v.due; } return np; });
+    case 'adjust': {
+      const isMat = p.target === 'material';
+      return editForm(id, 'تعديل تسوية', p.opening ? '<label>عدد الزجاجات<input name="d" inputmode="numeric" value="' + p.delta + '"></label><label>تكلفة الزجاجة (د.ل)<input name="uc" inputmode="decimal" value="' + qn(p.unitCost || 0) + '"></label>' : '<label>الفرق' + (isMat ? '' : ' (عدد)') + '<input name="d" inputmode="decimal" value="' + (isMat ? qn(p.delta) : p.delta) + '"></label><label>السبب<input name="r" value="' + esc(p.reason || '') + '"></label>',
+        v => { const d = isMat ? C.toM(v.d) : Number(C.normDigits(v.d)); return Object.assign({}, p, p.opening ? { delta: d, unitCost: C.toM(v.uc) } : { delta: d, reason: v.r }); });
+    }
+    case 'waste': {
+      const isMat = p.target === 'material';
+      return editForm(id, 'تعديل فاقد', '<label>الكمية' + (isMat ? '' : ' (عدد)') + '<input name="q" inputmode="decimal" value="' + (isMat ? qn(p.qty) : p.qty) + '"></label><label>السبب<select name="r">' + opt(C.WASTE_REASONS, p.reason) + '</select></label><label>ملاحظة<input name="n" value="' + esc(p.note || '') + '"></label>',
+        v => Object.assign({}, p, { qty: isMat ? C.toM(v.q) : Number(C.normDigits(v.q)), reason: v.r, note: v.n.trim() }));
+    }
+    case 'gift': return editForm(id, 'تعديل هدية', '<label>العدد<input name="q" inputmode="numeric" value="' + p.qty + '"></label><label>لمن<input name="to" value="' + esc(p.to || '') + '"></label><label>النوع<select name="k">' + opt(C.GIFT_KINDS, p.kind) + '</select></label><label>ملاحظة<input name="n" value="' + esc(p.note || '') + '"></label>',
+      v => Object.assign({}, p, { qty: Number(C.normDigits(v.q)), to: v.to.trim(), kind: v.k, note: v.n.trim() }));
+    case 'order_status': return editForm(id, 'تعديل حالة', '<label>الحالة<select name="s">' + opt(C.STATUS, p.status) + '</select></label><label>خسارة التوصيل (للمرفوض فقط)<input name="loss" inputmode="decimal" value="' + qn(p.lossFee || 0) + '"></label><label>ملاحظة<input name="n" value="' + esc(p.note || '') + '"></label>',
+      v => Object.assign({}, p, { status: v.s, lossFee: v.s === 'rejected' ? (fnum(v.loss, 0) || 0) : 0, note: v.n.trim() }));
+    case 'order_edit': return editForm(id, 'تعديل كود التوصيل', '<label>الكود<input name="c" dir="ltr" value="' + esc(p.courierCode || '') + '"></label>', v => Object.assign({}, p, { courierCode: v.c.trim() }));
+    case 'material_upsert': return matModal(p.id);
+    case 'product_upsert': return prodModal(p.id);
+    case 'user_upsert': return userModal(p.id);
+    case 'bundle_upsert': return bundleModal(p.id);
+  }
+  toast('هذا النوع يُعدَّل من شاشته مباشرة', 1);
+}
+
+// التراجع عن آخر حالة للطلب: إلغاء آخر عملية حالة فتعود الحالة والمخزون كما كانا
+function rollbackStatus(orderId) {
+  const o = S.orders[orderId]; if (!o) return;
+  const h = o.history[o.history.length - 1];
+  if (o.history.length < 2 || !h.op) return toast('لا توجد حالة سابقة للرجوع إليها', 1);
+  const prev = o.history[o.history.length - 2], eff = { shipped: 'سيعود المخزون كما كان قبل التسليم للمندوب', delivered: 'ستُلغى مصاريف التوصيل المرتبطة بالاستلام وتخرج من الإيراد', rejected: 'ستُسحب إعادة المخزون وخسارة التوصيل', returned: 'ستُسحب إعادة المخزون', cancelled: 'سيُعاد فتح الطلب' }[h.status] || '';
+  modal('تراجع عن الحالة', '<div class="alert warn">سيرجع الطلب ' + esc(o.code) + ' من «' + C.STATUS[h.status] + '» إلى «' + C.STATUS[prev.status] + '».<br>' + esc(eff) + '</div><p class="hint">يبقى القيد القديم في السجل ويمكن إعادته بإلغاء هذا التراجع.</p>', () => {
+    if (!commit('void', { target: h.op })) return false;
+    toast('تم الرجوع إلى «' + C.STATUS[prev.status] + '»');
+  }, 'تراجع');
+}
+
+// ---------- عرض قبل/بعد ----------
+const EDIT_LBL = { amt: 'المبلغ', orig: 'المبلغ الأصلي', qty: 'الكمية', cat: 'النوع', note: 'ملاحظة', discount: 'الخصم', discountPct: 'نسبة الخصم', deliveryFee: 'رسوم التوصيل', courierCost: 'تكلفة المندوب', courierCode: 'كود التوصيل', status: 'الحالة', units: 'العدد', to: 'المستلم', reason: 'السبب', party: 'الطرف', currency: 'العملة', cur: 'العملة', rate: 'سعر الصرف', method: 'طريقة الدفع', payMethod: 'طريقة الدفع', channel: 'القناة', campaign: 'الحملة', supplier: 'المورد', delta: 'الفرق', due: 'الاستحقاق', paid: 'المدفوع', kind: 'النوع', dir: 'الاتجاه', pct: 'التركيز', oilMl: 'زيت/زجاجة', time: 'الوقت', batch: 'الخلطة', waste: 'الفاقد', lossFee: 'خسارة التوصيل', unitCost: 'تكلفة الزجاجة', customer: 'العميل', items: 'المنتجات', recipe: 'التركيبة', code: 'الرقم' };
+const EDIT_MILLI = new Set(['amt', 'orig', 'discount', 'discountPct', 'deliveryFee', 'courierCost', 'rate', 'paid', 'lossFee', 'unitCost', 'pct', 'oilMl']);
+function editVal(k, v, type) {
+  if (v == null || v === '') return '—';
+  if (k === 'items') return v.map(i => ((S.products[i.productId] || {}).name || '؟') + '×' + i.qty + (i.gift ? ' (هدية)' : '')).join('، ');
+  if (k === 'customer') return [v.name, v.phone, v.city].filter(Boolean).join(' / ');
+  if (k === 'recipe') return v.length + ' مكوّنات';
+  if (k === 'waste') return v.length ? v.map(w => ((S.materials[w.materialId] || {}).name || '؟') + ' ' + num(w.qty)).join('، ') : '—';
+  if (k === 'status') return C.STATUS[v] || v;
+  if (k === 'cat') return C.EXP_CATS[v] || C.WD_CATS[v] || v;
+  if (k === 'reason') return C.WASTE_REASONS[v] || v;
+  if (k === 'method' || k === 'payMethod') return payLabel(v);
+  if (k === 'qty' && type === 'purchase') return num(v);
+  if (k === 'qty' && type === 'waste') return num(v);
+  if (EDIT_MILLI.has(k) && typeof v === 'number') return num(v);
+  if (k === 'delta' && type === 'adjust' && !Number.isInteger(v / 1)) return num(v);
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+function editDiff(e) {
+  const keys = [...new Set(Object.keys(e.before || {}).concat(Object.keys(e.after || {})))], rows = [];
+  for (const k of keys) {
+    if (k === 'id' || k === 'recipe' && JSON.stringify(e.before[k]) === JSON.stringify(e.after[k])) continue;
+    if (JSON.stringify(e.before[k]) === JSON.stringify(e.after[k])) continue;
+    rows.push('<small class="d"><b>' + (EDIT_LBL[k] || k) + ':</b> ' + esc(editVal(k, e.before[k], e.type)) + ' ← <b>' + esc(editVal(k, e.after[k], e.type)) + '</b></small>');
+  }
+  if (e.beforeDate !== e.afterDate) rows.push('<small class="d"><b>التاريخ:</b> ' + e.beforeDate + ' ← <b>' + e.afterDate + '</b></small>');
+  return rows.join('') || '<small class="d">لا فرق ظاهر</small>';
+}
+function editLogHtml(list, title) {
+  if (!list.length) return '';
+  return '<h3>' + (title || 'سجل التعديلات') + '</h3>' + list.slice().sort((a, b) => b.ts - a.ts).map(e => '<div class="card"><div class="row spread"><b>' + esc(describe(OPS.find(o => o.id === e.target) || { type: e.type, p: e.after, date: e.afterDate, by: '' }).split(' · ').slice(1, 2).join('')) + '</b><small class="d">' + new Date(e.ts).toLocaleString('ar-LY', { dateStyle: 'short', timeStyle: 'short' }) + ' · ' + esc((S.users[e.by] || {}).name || '') + '</small></div>' + editDiff(e) + (e.note ? '<small class="d">السبب: ' + esc(e.note) + '</small>' : '') + '<div class="row" style="margin-top:6px"><button class="btn sm red" data-a="void" data-id="' + e.id + '">تراجع عن هذا التعديل</button></div></div>').join('');
+}
 // ---------- الأوامر والتشغيل ----------
 const A = {
   tab: t => { ui.tab = t.dataset.id; ui.custKey = ''; ui.gq = ''; render(); window.scrollTo(0, 0); },
@@ -858,7 +1083,7 @@ const A = {
   close: closeModal,
   connect: connectModal, logout,
   syncNow: () => sync(true).then(ok => { toast(ok ? 'تمت المزامنة' : 'تعذرت المزامنة: ' + lastErr, !ok); render(); }),
-  newOrder, order: t => orderDetail(t.dataset.id), status: t => setStatus(t.dataset.id, t.dataset.s), pay: t => payModal(t.dataset.id), ccode: t => courierModal(t.dataset.id), print: t => printOrder(t.dataset.id),
+  newOrder: () => newOrder(), order: t => orderDetail(t.dataset.id), status: t => setStatus(t.dataset.id, t.dataset.s), pay: t => payModal(t.dataset.id), ccode: t => courierModal(t.dataset.id), print: t => printOrder(t.dataset.id),
   delivery: t => deliveryModal(t.dataset.id), bag: t => printBag(t.dataset.id),
   wa: t => { const o = S.orders[t.dataset.id]; if (!o) return; const ph = intlPhone(o.customer.phone); if (!ph) return toast('لا يوجد رقم هاتف', 1); window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(waText(o)), '_blank'); },
   cp: t => { const r = (window.__dRows || [])[Number(t.dataset.i)]; if (r) copyText(String(r[1])); },
@@ -869,6 +1094,8 @@ const A = {
   newExp: expModal, newWd: wdModal, user: t => userModal(t.dataset.id), goal: goalModal, bundle: t => bundleModal(t.dataset.id), helpSheet,
   newDebt: debtModal, debt: t => debtDetail(t.dataset.id), payDebt: t => debtPayModal(t.dataset.id),
   rate: ratesModal,
+  edit: t => editOp(t.dataset.id), rollback: t => rollbackStatus(t.dataset.id), waste: () => wasteModal(), editOrder: t => { const o = S.orders[t.dataset.id]; if (o) { const e = opNow(o.opId); closeModal(); newOrder({ id: o.opId, p: e.p, date: e.date }); } },
+  addWaste: () => { $('#wlines').insertAdjacentHTML('beforeend', wasteLine()); }, rmWaste: t => { t.closest('.wline').remove(); },
   void: t => askConfirm('سيتم عكس أثر هذه العملية بالكامل. متأكد؟', () => commit('void', { target: t.dataset.id })),
   csv: t => { const v = C.views(S)[t.dataset.id]; if (v) download(t.dataset.id + '.csv', toCSV(v)); },
   backup: () => download('backup-' + today() + '.json', JSON.stringify(OPS.map(strip)), 'application/json')

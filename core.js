@@ -21,14 +21,15 @@
   const MAT_CATS = { alcohol: 'كحول', oil: 'زيوت عطرية', glass: 'زجاج', box: 'بوكس', sticker: 'ستيكر', bag: 'أكياس', other: 'أخرى' };
   const UNITS = { ml: 'مل', g: 'جرام', pcs: 'قطعة' };
   const MASTER = ['user_upsert', 'settings_set', 'material_upsert', 'product_upsert'];
+  const WASTE_REASONS = { broke: 'كسر زجاج', spilled: 'انسكاب خلطة', torn: 'تمزق ستيكر / تغليف', evap: 'تبخر', expired: 'تلف / انتهاء صلاحية', other: 'أخرى' };
   const WD_CATS = { food: 'أكل وشرب', clothes: 'ملابس', transport: 'مواصلات', family: 'عائلة ومنزل', other: 'أخرى' };
-  const OP_TYPES = ['user_upsert', 'settings_set', 'material_upsert', 'product_upsert', 'purchase', 'production', 'order_create', 'order_status', 'order_edit', 'payment', 'expense', 'adjust', 'gift', 'withdrawal', 'coupon_upsert', 'bundle_upsert', 'debt_add', 'debt_pay', 'void'];
+  const OP_TYPES = ['user_upsert', 'settings_set', 'material_upsert', 'product_upsert', 'purchase', 'production', 'order_create', 'order_status', 'order_edit', 'payment', 'expense', 'adjust', 'gift', 'withdrawal', 'coupon_upsert', 'bundle_upsert', 'debt_add', 'debt_pay', 'waste', 'edit', 'void'];
 
   const PERMS = {
     owner: null,
-    manager: OP_TYPES.filter(t => t !== 'user_upsert' && t !== 'settings_set' && t !== 'withdrawal'),
+    manager: OP_TYPES.filter(t => t !== 'user_upsert' && t !== 'settings_set' && t !== 'withdrawal' && t !== 'edit'),
     sales: ['order_create', 'order_status', 'order_edit', 'payment'],
-    warehouse: ['purchase', 'production', 'adjust', 'material_upsert', 'order_status', 'order_edit'],
+    warehouse: ['purchase', 'production', 'waste', 'adjust', 'material_upsert', 'order_status', 'order_edit'],
     accountant: ['expense', 'payment', 'debt_pay'],
     ads: ['expense']
   };
@@ -117,7 +118,7 @@
 
   // ---------- الحالة ----------
   function emptyState() {
-    return { settings: { rate: 0, brand: '' }, users: {}, materials: {}, products: {}, orders: {}, expenses: [], adjustments: [], gifts: [], withdrawals: [], coupons: {}, bundles: {}, debts: {}, payments: [], movements: [], alerts: [], opsCount: 0 };
+    return { settings: { rate: 0, brand: '' }, users: {}, materials: {}, products: {}, orders: {}, expenses: [], adjustments: [], waste: [], production: [], editLog: [], gifts: [], withdrawals: [], coupons: {}, bundles: {}, debts: {}, payments: [], movements: [], alerts: [], opsCount: 0 };
   }
   function take(o, k, n) {
     const have = o[k];
@@ -259,13 +260,36 @@
           total += c;
           S.movements.push({ ts: op.ts, date: d, kind: 'consume', type: 'material', id: m.id, name: m.name, qty: -need, value: -c, note: 'تعبئة ' + pr.name });
         }
+        let wcost = 0;
+        (p.waste || []).forEach((w, i) => {
+          const m = S.materials[w.materialId];
+          if (!m) return add('err', 'مادة فاقد محذوفة في تعبئة ' + pr.name);
+          if (m.qty < w.qty) add('err', 'مخزون ' + m.name + ' لا يكفي للفاقد في تعبئة ' + pr.name);
+          const c = take(m, 'qty', w.qty);
+          wcost += c;
+          S.movements.push({ ts: op.ts, date: d, kind: 'waste', type: 'material', id: m.id, name: m.name, qty: -w.qty, value: -c, note: 'فاقد تعبئة: ' + (WASTE_REASONS[w.reason] || 'أخرى') });
+          S.waste.push({ id: op.id + ':' + i, op: op.id, date: d, ts: op.ts, by: op.by, src: 'production', target: 'material', itemId: m.id, name: m.name, unit: m.unit, qty: w.qty, cost: c, reason: w.reason || 'other', note: 'تعبئة ' + pr.name });
+        });
+        total += wcost;
         put(pr, 'stock', p.units, total);
-        S.movements.push({ ts: op.ts, date: d, kind: 'produce', type: 'product', id: pr.id, name: pr.name, qty: p.units, value: total, note: p.note || '' });
+        S.movements.push({ ts: op.ts, date: d, kind: 'produce', type: 'product', id: pr.id, name: pr.name, qty: p.units, value: total, note: [p.batch, p.note].filter(Boolean).join(' · ') });
+        S.production.push({ id: op.id, date: d, ts: op.ts, by: op.by, productId: pr.id, name: pr.name, units: p.units, pct: p.pct || 0, oilMl: p.oilMl || 0, time: p.time || 0, batch: p.batch || '', note: p.note || '', wasteCost: wcost, cost: total, unitCost: p.units ? Math.round(total / p.units) : 0 });
+        break;
+      }
+      case 'waste': {
+        const isMat = p.target === 'material';
+        const it = isMat ? S.materials[p.id] : S.products[p.id];
+        if (!it) return add('err', 'فاقد لصنف غير موجود');
+        const k = isMat ? 'qty' : 'stock';
+        if (it[k] < p.qty) add('err', 'الفاقد أكبر من رصيد ' + it.name);
+        const c = take(it, k, p.qty);
+        S.movements.push({ ts: op.ts, date: d, kind: 'waste', type: isMat ? 'material' : 'product', id: it.id, name: it.name, qty: -p.qty, value: -c, note: 'فاقد: ' + (WASTE_REASONS[p.reason] || 'أخرى') + (p.note ? ' — ' + p.note : '') });
+        S.waste.push({ id: op.id, op: op.id, date: d, ts: op.ts, by: op.by, src: 'standalone', target: p.target, itemId: it.id, name: it.name, unit: isMat ? it.unit : 'pcs', qty: p.qty, cost: c, reason: p.reason || 'other', note: p.note || '' });
         break;
       }
       case 'order_create': {
         const items = p.items.map(i => ({ productId: i.productId, qty: i.qty, gift: !!i.gift, price: i.gift ? 0 : i.price, name: (S.products[i.productId] || {}).name || '؟', cogs: 0 }));
-        S.orders[p.id] = { id: p.id, code: p.code, date: d, ts: op.ts, by: op.by, customer: p.customer, items, discount: p.discount || 0, coupon: p.coupon ? normCode(p.coupon) : '', discountPct: p.discountPct || 0, campaign: p.campaign ? String(p.campaign).trim() : '', bundles: p.bundles || [], deliveryFee: p.deliveryFee || 0, courierCost: p.courierCost || 0, courierCode: p.courierCode || '', channel: p.channel || '', payMethod: p.payMethod || 'cod', note: p.note || '', status: 'new', history: [{ status: 'new', date: d, by: op.by }], paid: 0, cogs: 0 };
+        S.orders[p.id] = { id: p.id, code: p.code, date: d, ts: op.ts, by: op.by, customer: p.customer, items, discount: p.discount || 0, coupon: p.coupon ? normCode(p.coupon) : '', discountPct: p.discountPct || 0, campaign: p.campaign ? String(p.campaign).trim() : '', bundles: p.bundles || [], deliveryFee: p.deliveryFee || 0, courierCost: p.courierCost || 0, courierCode: p.courierCode || '', channel: p.channel || '', payMethod: p.payMethod || 'cod', note: p.note || '', opId: op.id, status: 'new', history: [{ status: 'new', date: d, by: op.by, op: op.id }], paid: 0, cogs: 0 };
         break;
       }
       case 'order_status': {
@@ -300,7 +324,7 @@
           if (p.lossFee > 0) S.expenses.push({ id: op.id + ':l', date: d, cat: 'delivery_loss', lyd: p.lossFee, note: 'طلب ' + o.code, auto: true });
         }
         o.status = p.status;
-        o.history.push({ status: p.status, date: d, by: op.by, note: p.note || '' });
+        o.history.push({ status: p.status, date: d, by: op.by, note: p.note || '', op: op.id });
         break;
       }
       case 'order_edit': {
@@ -325,7 +349,7 @@
         break;
       }
       case 'debt_add': {
-        S.debts[p.id] = { id: p.id, dir: p.dir, kind: p.kind || 'other', party: String(p.party).trim(), lyd: toLyd(p.amt, p.currency, p.rate), cur: p.currency || 'LYD', orig: p.amt, due: p.due || '', note: p.note || '', date: d, ts: op.ts, by: op.by, paid: 0, payments: [] };
+        S.debts[p.id] = { id: p.id, opId: op.id, dir: p.dir, kind: p.kind || 'other', party: String(p.party).trim(), lyd: toLyd(p.amt, p.currency, p.rate), cur: p.currency || 'LYD', orig: p.amt, due: p.due || '', note: p.note || '', date: d, ts: op.ts, by: op.by, paid: 0, payments: [] };
         break;
       }
       case 'debt_pay': {
@@ -384,11 +408,26 @@
     S.opsCount = ops.length;
     S.voided = voided;
     // البيانات الأساسية تُطبَّق أولًا حتى لا يضيع أثر عملية بسبب فرق ساعة بين جهازين
-    const live = ops.filter(o => o.type !== 'void' && !voided.has(o.id));
+    const live0 = ops.filter(o => o.type !== 'void' && !voided.has(o.id));
+    // التعديلات: آخر تعديل غير ملغى يستبدل محتوى العملية الأصلية (والأصل يبقى محفوظًا في السجل)
+    const byId = {}; for (const o of ops) byId[o.id] = o;
+    const eff = {};
+    for (const e of live0.filter(o => o.type === 'edit').sort(cmp)) {
+      const t = byId[e.p.target];
+      if (!t || voided.has(t.id) || t.type === 'edit' || t.type === 'void') continue;
+      const prev = eff[t.id] || { p: t.p, date: t.date };
+      const next = { p: e.p.p, date: e.p.date || prev.date };
+      S.editLog.push({ id: e.id, target: t.id, type: t.type, by: e.by, ts: e.ts, date: e.date, note: e.p.note || '', before: prev.p, after: next.p, beforeDate: prev.date, afterDate: next.date });
+      eff[t.id] = next;
+    }
+    const live = live0.filter(o => o.type !== 'edit').map(o => eff[o.id] ? Object.assign({}, o, { p: eff[o.id].p, date: eff[o.id].date, edited: true }) : o);
     const master = live.filter(o => MASTER.indexOf(o.type) >= 0).sort(cmp);
     const trans = live.filter(o => MASTER.indexOf(o.type) < 0).sort(cmp);
+    const tag = ['movements', 'expenses', 'payments', 'withdrawals', 'gifts', 'adjustments'];
     for (const op of master.concat(trans)) {
+      const n0 = tag.map(k => S[k].length);
       try { apply(S, op); } catch (e) { S.alerts.push({ lvl: 'err', msg: 'خطأ في معالجة عملية: ' + e.message, op: op.id }); }
+      tag.forEach((k, i) => { for (let j = n0[i]; j < S[k].length; j++) if (!S[k][j].op) S[k][j].op = op.id; });
     }
     for (const o of Object.values(S.orders)) Object.assign(o, orderTotals(o));
     for (const m of Object.values(S.materials)) {
@@ -402,9 +441,15 @@
 
   /*@client-start*/
   // التعبئة تحفظ نسخة من التركيبة وقت التنفيذ كي لا تتغير التكلفة التاريخية إذا عُدِّلت التركيبة لاحقًا
-  function productionPayload(S, productId, units, note) {
-    const pr = S.products[productId];
-    return { productId, units, note: note || '', recipe: pr ? pr.recipe.map(l => ({ materialId: l.materialId, qty: l.qty })) : [] };
+  function productionPayload(S, productId, units, note, o) {
+    const pr = S.products[productId]; o = o || {};
+    const out = { productId, units, note: note || '', recipe: o.recipe || (pr ? pr.recipe.map(l => ({ materialId: l.materialId, qty: l.qty })) : []) };
+    if (o.pct) out.pct = o.pct;
+    if (o.oilMl) out.oilMl = o.oilMl;
+    if (o.time) out.time = o.time;
+    if (o.batch) out.batch = o.batch;
+    if (o.waste && o.waste.length) out.waste = o.waste;
+    return out;
   }
 
   // ---------- التحقق قبل التسجيل ----------
@@ -432,14 +477,33 @@
         const pr = S.products[p.productId];
         if (!pr) return 'اختر المنتج';
         if (!Number.isInteger(p.units) || p.units <= 0) return 'عدد الوحدات يجب أن يكون عددًا صحيحًا موجبًا';
+        if (p.pct && !(p.pct > 0 && p.pct <= 100000)) return 'نسبة التركيز غير صحيحة';
+        const need = {};
         for (const l of (p.recipe || pr.recipe)) {
-          const m = S.materials[l.materialId];
-          if (!m) return 'مادة محذوفة في التركيبة';
-          const need = l.qty * p.units;
-          if (m.qty < need) return 'مخزون «' + m.name + '» لا يكفي: المتاح ' + fmtNum(m.qty) + ' والمطلوب ' + fmtNum(need) + ' ' + UNITS[m.unit];
+          if (!S.materials[l.materialId]) return 'مادة محذوفة في التركيبة';
+          need[l.materialId] = (need[l.materialId] || 0) + l.qty * p.units;
+        }
+        for (const w of (p.waste || [])) {
+          if (!S.materials[w.materialId]) return 'مادة غير موجودة في الفاقد';
+          if (!(w.qty > 0)) return 'كمية الفاقد غير صحيحة';
+          need[w.materialId] = (need[w.materialId] || 0) + w.qty;
+        }
+        for (const id of Object.keys(need)) {
+          const m = S.materials[id];
+          if (m.qty < need[id]) return 'مخزون «' + m.name + '» لا يكفي: المتاح ' + fmtNum(m.qty) + ' والمطلوب ' + fmtNum(need[id]) + ' ' + UNITS[m.unit];
         }
         return null;
       }
+      case 'waste': {
+        const isMat = p.target === 'material';
+        const it = isMat ? S.materials[p.id] : S.products[p.id];
+        if (!it) return 'اختر الصنف';
+        if (!(p.qty > 0)) return 'كمية الفاقد غير صحيحة';
+        if (!isMat && !Number.isInteger(p.qty)) return 'عدد المنتجات يجب أن يكون صحيحًا';
+        if (!WASTE_REASONS[p.reason]) return 'اختر سبب الفاقد';
+        return (isMat ? it.qty : it.stock) < p.qty ? 'الفاقد أكبر من الرصيد' : null;
+      }
+      case 'edit': return p.target && p.p && typeof p.p === 'object' ? null : 'تعديل غير صالح';
       case 'order_create':
         const allGift = !!(p.items && p.items.length) && p.items.every(i => i.gift);
         if (!p.customer || !p.customer.name) return allGift ? 'اكتب اسم المستلم' : 'اسم العميل ورقم هاتفه مطلوبان';
@@ -553,6 +617,9 @@
     for (const e of exps) byCat[e.cat] = (byCat[e.cat] || 0) + e.lyd;
     const expTotal = sum(exps, e => e.lyd);
     const shrink = 0 - sum(S.adjustments.filter(a => inR(a.date)), a => a.value);
+    const wl = S.waste.filter(w => inR(w.date)), wasteByReason = {};
+    for (const w of wl) { const r = wasteByReason[w.reason] || (wasteByReason[w.reason] = { reason: w.reason, n: 0, cost: 0, prod: 0 }); r.n++; r.cost += w.cost; if (w.src === 'production') r.prod += w.cost; }
+    const wasteProd = sum(wl.filter(w => w.src === 'production'), w => w.cost), wasteLoss = sum(wl.filter(w => w.src !== 'production'), w => w.cost);
     const adSpend = sum(AD_CATS, c => byCat[c] || 0);
     const gross = revenue - cogs;
     const discOrders = delivered.filter(o => (o.discount || 0) > 0), byCoupon = {};
@@ -587,7 +654,7 @@
     }
     const decided = delivered.length + rejected.length;
     return {
-      from, to, revenue, cogs, gross, expTotal, byCat, shrink, net: gross - expTotal - shrink, adSpend, byCampaign, byCity, topCustomers, commissions: Object.values(comm), discountTotal, discountOrders: discOrders.length, byCoupon: Object.values(byCoupon).sort((a, b) => b.discount - a.discount), wdTotal, wdByCat, remainder: gross - expTotal - shrink - wdTotal, outAll: expTotal + shrink + wdTotal,
+      from, to, revenue, cogs, gross, expTotal, byCat, shrink, wasteLoss, wasteProd, wasteTotal: wasteLoss + wasteProd, wasteByReason: Object.values(wasteByReason).sort((a, b) => b.cost - a.cost), net: gross - expTotal - shrink - wasteLoss, adSpend, byCampaign, byCity, topCustomers, commissions: Object.values(comm), discountTotal, discountOrders: discOrders.length, byCoupon: Object.values(byCoupon).sort((a, b) => b.discount - a.discount), wdTotal, wdByCat, remainder: gross - expTotal - shrink - wasteLoss - wdTotal, outAll: expTotal + shrink + wasteLoss + wdTotal,
       created: created.length, delivered: delivered.length, rejected: rejected.length,
       rejectRate: decided ? rejected.length / decided : 0,
       costPerOrder: created.length ? Math.round(adSpend / created.length) : 0,
@@ -601,6 +668,24 @@
       matValue: sum(Object.values(S.materials), m => m.value),
       fgValue: sum(Object.values(S.products), p => p.value)
     };
+  }
+
+  // أثر تعديل قبل حفظه: يعيد تشغيل السجل بدونه وبه ويقارن (التنبيهات الجديدة + الأرصدة + الأرباح)
+  function editImpact(ops, targetId, newP, newDate, by) {
+    const t = ops.find(o => o.id === targetId);
+    if (!t) return { error: 'العملية غير موجودة' };
+    const S1 = reduce(ops);
+    const probe = { id: '~probe', type: 'edit', ts: Date.now() + 1e6, date: newDate || t.date, by: by || '', p: { target: targetId, p: newP, date: newDate || t.date } };
+    const S2 = reduce(ops.concat([probe]));
+    const had = new Set(S1.alerts.map(a => a.msg));
+    const newAlerts = S2.alerts.filter(a => !had.has(a.msg) && a.op !== '~probe');
+    const stock = [];
+    for (const k of ['materials', 'products']) for (const id of Object.keys(S2[k])) {
+      const a = S1[k][id], b = S2[k][id], f = k === 'materials' ? 'qty' : 'stock';
+      if (a && b && a[f] !== b[f]) stock.push({ type: k === 'materials' ? 'material' : 'product', name: b.name, unit: k === 'materials' ? b.unit : 'pcs', before: a[f], after: b[f] });
+    }
+    const r1 = report(S1, '', ''), r2 = report(S2, '', '');
+    return { errors: newAlerts.filter(a => a.lvl === 'err').map(a => a.msg), warns: newAlerts.filter(a => a.lvl !== 'err').map(a => a.msg), stock, net: [r1.net, r2.net], revenue: [r1.revenue, r2.revenue], S2 };
   }
 
   // جداول جاهزة للكتابة في جوجل شيت أو التصدير CSV
@@ -619,7 +704,7 @@
       'المصروفات': [['التاريخ', 'النوع', 'المبلغ د.ل', 'ملاحظة']].concat(
         S.expenses.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map(e => [e.date, EXP_CATS[e.cat], n(e.lyd), e.note || ''])),
       'حركة المخزون': [['التاريخ', 'الحركة', 'الصنف', 'الكمية', 'القيمة د.ل', 'ملاحظة']].concat(
-        S.movements.slice().sort((a, b) => b.ts - a.ts).map(m => [m.date, { purchase: 'شراء', consume: 'استهلاك تعبئة', produce: 'إنتاج', ship: 'شحن', restock: 'إعادة للمخزون', adjust: 'تسوية', opening: 'رصيد افتتاحي', gift: 'هدية' }[m.kind], m.name, m.type === 'material' ? n(m.qty) : m.qty, n(m.value), m.note || ''])),
+        S.movements.slice().sort((a, b) => b.ts - a.ts).map(m => [m.date, { purchase: 'شراء', consume: 'استهلاك تعبئة', produce: 'إنتاج', ship: 'شحن', restock: 'إعادة للمخزون', adjust: 'تسوية', opening: 'رصيد افتتاحي', gift: 'هدية', waste: 'فاقد' }[m.kind], m.name, m.type === 'material' ? n(m.qty) : m.qty, n(m.value), m.note || ''])),
       'الديون': [['التاريخ', 'الاتجاه', 'الطرف', 'النوع', 'الإجمالي د.ل', 'المدفوع', 'المتبقي', 'الاستحقاق', 'ملاحظة']].concat(
         Object.values(S.debts).map(d => [d.date, d.dir === 'in' ? 'لنا' : 'علينا', d.party, { customer: 'عميل', courier: 'شركة توصيل', supplier: 'مورد', printer: 'مطبعة', personal: 'شخصي', other: 'أخرى' }[d.kind] || d.kind, n(d.lyd), n(d.paid), n(d.lyd - d.paid), d.due || '', d.note || ''])),
       'العملاء': [['الاسم', 'الهاتف', 'المدينة', 'الطلبات', 'المستلمة', 'المرفوضة', 'إجمالي الشراء د.ل', 'آخر طلب']].concat(
@@ -630,12 +715,18 @@
         S.withdrawals.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.ts - a.ts)).map(w => [w.date, WD_CATS[w.cat], n(w.lyd), w.note || '', (users[w.by] || {}).name || ''])),
       'الهدايا': [['التاريخ', 'المستلم', 'العطر', 'العدد', 'التكلفة د.ل', 'الطلب / ملاحظة', 'الموظف']].concat(
         giftRows(S).map(g => [g.date, g.to, g.name, g.qty, n(g.cost), g.note || '', (users[g.by] || {}).name || ''])),
+      'الفاقد': [['التاريخ', 'الصنف', 'الكمية', 'السبب', 'التكلفة د.ل', 'المصدر', 'ملاحظة', 'الموظف']].concat(
+        S.waste.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.ts - a.ts)).map(w => [w.date, w.name, w.target === 'material' ? n(w.qty) : w.qty, WASTE_REASONS[w.reason] || '', n(w.cost), w.src === 'production' ? 'داخل التعبئة' : 'مستقل', w.note || '', (users[w.by] || {}).name || ''])),
+      'التعبئة': [['التاريخ', 'المنتج', 'العدد', 'نسبة التركيز %', 'زيت/زجاجة مل', 'الوقت دقيقة', 'الخلطة', 'تكلفة الزجاجة د.ل', 'فاقد التعبئة د.ل', 'ملاحظة', 'الموظف']].concat(
+        S.production.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.ts - a.ts)).map(r => [r.date, r.name, r.units, r.pct ? n(r.pct) : '', r.oilMl ? n(r.oilMl) : '', r.time || '', r.batch, n(r.unitCost), n(r.wasteCost), r.note, (users[r.by] || {}).name || ''])),
+      'سجل التعديلات': [['وقت التعديل', 'النوع', 'بواسطة', 'قبل', 'بعد', 'ملاحظة']].concat(
+        S.editLog.slice().sort((a, b) => b.ts - a.ts).map(e => [new Date(e.ts).toISOString().replace('T', ' ').slice(0, 16), e.type, (users[e.by] || {}).name || '', JSON.stringify(e.before) + ' | ' + e.beforeDate, JSON.stringify(e.after) + ' | ' + e.afterDate, e.note])),
       'الملخص': (function () {
         const r = report(S, '', ''), usd = v => (rate ? n(toUsd(v, rate)) : '');
-        return [['البند', 'د.ل', 'دولار'], ['الإيراد (طلبات مستلمة)', n(r.revenue), usd(r.revenue)], ['تكلفة البضاعة', n(r.cogs), usd(r.cogs)], ['مجمل الربح', n(r.gross), usd(r.gross)], ['المصروفات', n(r.expTotal), usd(r.expTotal)], ['فاقد وتسويات', n(r.shrink), usd(r.shrink)], ['صافي الربح', n(r.net), usd(r.net)], ['الخصومات المُعطاة (ضمن الإيراد الصافي)', n(r.discountTotal), usd(r.discountTotal)], ['المسحوبات الشخصية', n(r.wdTotal), usd(r.wdTotal)], ['المتبقي بعد المسحوبات', n(r.remainder), usd(r.remainder)], ['منها إنفاق إعلاني', n(r.adSpend), usd(r.adSpend)], ['ذمم لم تُحصَّل', n(r.receivables), usd(r.receivables)], ['قيمة المواد الخام', n(r.matValue), usd(r.matValue)], ['قيمة المنتجات الجاهزة', n(r.fgValue), usd(r.fgValue)]];
+        return [['البند', 'د.ل', 'دولار'], ['الإيراد (طلبات مستلمة)', n(r.revenue), usd(r.revenue)], ['تكلفة البضاعة', n(r.cogs), usd(r.cogs)], ['مجمل الربح', n(r.gross), usd(r.gross)], ['المصروفات', n(r.expTotal), usd(r.expTotal)], ['فاقد وتسويات', n(r.shrink + r.wasteLoss), usd(r.shrink + r.wasteLoss)], ['صافي الربح', n(r.net), usd(r.net)], ['الخصومات المُعطاة (ضمن الإيراد الصافي)', n(r.discountTotal), usd(r.discountTotal)], ['المسحوبات الشخصية', n(r.wdTotal), usd(r.wdTotal)], ['المتبقي بعد المسحوبات', n(r.remainder), usd(r.remainder)], ['منها إنفاق إعلاني', n(r.adSpend), usd(r.adSpend)], ['ذمم لم تُحصَّل', n(r.receivables), usd(r.receivables)], ['قيمة المواد الخام', n(r.matValue), usd(r.matValue)], ['قيمة المنتجات الجاهزة', n(r.fgValue), usd(r.fgValue)]];
       })()
     };
   }
 
-  return { VERSION, MILLI, MASTER, productionPayload, ROLES, STATUS, TRANSITIONS, EXP_CATS, WD_CATS, CURRENCIES, PAY_METHODS, couponCheck, couponUses, normCode, giftRows, phoneKey, customers, customerRisk, lowStock, debtInfo, AD_CATS, MAT_CATS, UNITS, GIFT_KINDS, OP_TYPES, PERMS, can, canOp, uid, normDigits, toM, fromM, toLyd, toUsd, fmtNum, sha256, hashPin, reduce, validate, report, views, recipeCost, orderTotals, emptyState };
+  return { VERSION, MILLI, MASTER, productionPayload, ROLES, STATUS, TRANSITIONS, EXP_CATS, WD_CATS, CURRENCIES, PAY_METHODS, couponCheck, couponUses, normCode, giftRows, phoneKey, customers, customerRisk, lowStock, debtInfo, AD_CATS, MAT_CATS, UNITS, GIFT_KINDS, OP_TYPES, WASTE_REASONS, editImpact, PERMS, can, canOp, uid, normDigits, toM, fromM, toLyd, toUsd, fmtNum, sha256, hashPin, reduce, validate, report, views, recipeCost, orderTotals, emptyState };
 });
